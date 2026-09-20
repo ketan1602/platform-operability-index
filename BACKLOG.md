@@ -5,6 +5,18 @@ Do not re-litigate decisions already made — treat this as a pick-up list.
 
 ---
 
+## Reference: Three metric types (governs when statistics apply)
+
+| Type | Definition | Statistical need |
+|---|---|---|
+| **Deterministic property** | Same answer every run — it either exists or it doesn't | N=1 is correct. Adding runs adds noise, not signal. |
+| **Empirical measurement** | Timing, counts — varies with system state across runs | N≥10 runs; bootstrap CI for timing; Wilson/binomial CI for counts |
+| **Researcher judgment / desk research** | Changelog reading, time estimates, hack lists | Inter-rater reliability (Cohen's κ or Krippendorff's α) + documented protocol |
+
+Most of POI's credibility problem comes from treating type 2 and type 3 metrics with type 1 certainty (single observation reported as fact).
+
+---
+
 ## Tier 1 — Before any external publication (low effort, high impact)
 
 These require no new runs. Can be done against existing code and data.
@@ -48,7 +60,25 @@ app.kubernetes.io/managed-by
 
 ---
 
-### T1-3 — P5: Formal protocol and second rater
+### T1-3 — P4: Second rater for framework_specific_hacks_required
+
+**What:** The `framework_specific_hacks_required` field is a subjective list produced by one reviewer. Two independent reviewers listing hacks for each framework, measured by weighted Cohen's κ, converts it from an opinion into a measurement.
+
+**Protocol:**
+1. Second reviewer independently reads each framework's Helm chart and p4_measure.py hacks list
+2. Lists hacks without seeing the first reviewer's list
+3. Compute weighted Cohen's κ on overlap. Target κ ≥ 0.6 before publishing.
+4. If κ < 0.6 resolve disagreements, re-rate
+
+**Statistical method:** Weighted Cohen's κ (agentlens `stats/_kappa.py` — copy)
+
+**Where:** Document κ value in each `harness/adapters/<fw>/p4_measure.py` docstring alongside the hacks list.
+
+**Effort:** One afternoon — no code changes, just a second human review pass.
+
+---
+
+### T1-4 — P5: Formal protocol and second rater
 
 **What:** Replace the current single-researcher changelog assessments with a documented, reproducible protocol.
 
@@ -75,7 +105,7 @@ app.kubernetes.io/managed-by
 
 ---
 
-### T1-4 — Composite: Weight sensitivity analysis (Dirichlet)
+### T1-5 — Composite: Weight sensitivity analysis (Dirichlet)
 
 **What:** Re-run ranking under 10,000 random weight vectors drawn from Dirichlet(1,1,1,1,1) (uniform over the weight simplex). Report: does the ranking hold under > 80% of weight draws?
 
@@ -94,7 +124,7 @@ This converts an equal-weight assumption into an auditable claim: "the ranking i
 
 ---
 
-### T1-5 — Composite: Spearman rank correlation (fixed vs idiomatic)
+### T1-6 — Composite: Spearman rank correlation (fixed vs idiomatic)
 
 **What:** Compute Spearman's ρ between fixed-implementation POI scores and idiomatic-implementation POI scores across the 5 frameworks. If ρ > 0.8, the fixed/idiomatic distinction doesn't change conclusions.
 
@@ -128,13 +158,27 @@ resume_latency_ms:
 
 ---
 
-### T2-2 — P1/P2: Wilson CI on binary outcomes
+### T2-2 — P1/P2: Wilson CI on binary outcomes + exact binomial for boolean properties
 
-**What:** For all binary count metrics (`duplicate_tool_calls_on_mid_write`, `credential_bleed_events`, `steps_re_executed_on_resume`), report Wilson score CI.
+**What:** Two related additions:
 
-When count=0 over N=20 runs: 95% CI upper bound = 1 - (0.05/2)^(1/N) ≈ 0.14 for N=20. That turns "it never happened" into "it happened at most 14% of the time at 95% confidence" — which is a defensible claim.
+**Wilson score CI** — for count metrics (`duplicate_tool_calls_on_mid_write`, `credential_bleed_events`, `steps_re_executed_on_resume`):
+- When count=0 over N=20 runs: 95% CI upper bound ≈ 0.14 for N=20
+- Turns "it never happened" into "it happened at most 14% of the time at 95% confidence" — defensible
 
-**Where:** Add `harness/shared/stats/wilson.py` (~10 lines), use in all P1/P2 adapters.
+**Exact binomial CI** — for boolean properties measured over N runs (`runaway_loop_contained_by_default`):
+- Always contained across 20 runs → report: 20/20 = 1.0 [0.83, 1.0] 95% CI
+- Use exact binomial (not normal approximation) below N=30
+
+**McNemar's test** — for pairwise framework comparison on binary outcomes:
+- "Did framework A have duplicate tool calls where framework B did not?" — McNemar answers this
+- Separate from Wilson CI (per-framework proportion) and from Wilcoxon (continuous timing)
+- From agentlens `stats/_mcnemar.py` — exact form below 25 discordant pairs
+
+**Where:**
+- Add `harness/shared/stats/wilson.py` (~10 lines) for Wilson CI and exact binomial
+- Add McNemar via agentlens copy into `harness/shared/stats/mcnemar.py`
+- Use in all P1/P2 adapters after N=20 runs
 
 ---
 
@@ -183,6 +227,22 @@ Only report framework comparisons as "significant" where Cliff's δ ≥ 0.33 (sm
 
 ---
 
+### T2-6 — Composite: Parametric bootstrap CI on POI score
+
+**What:** Propagate measurement uncertainty through the scoring function to produce a CI on each framework's composite POI score. Enables claims like: "LangGraph: POI 9 [7, 10] 95% CI". Requires N runs per metric to exist (do after T2-1).
+
+**Method:** For each of 10,000 bootstrap resamples:
+1. Sample N timing/count measurements for each metric with replacement
+2. Compute P1–P5 scores from the resampled measurements
+3. Sum to POI composite
+4. Report 2.5th and 97.5th percentiles as CI bounds
+
+**Where:** `analysis/poi_report.py` — add `_composite_ci(records, n_resamples=10_000)` function (~30 lines)
+
+**Depends on:** T2-1 (N=20 runs must exist before this is meaningful)
+
+---
+
 ## Tier 3 — For Article 7 (agents-at-scale multi-framework benchmark)
 
 Full statistical treatment. Do after Articles 1–6 of agents-at-scale are complete.
@@ -206,7 +266,12 @@ Full statistical treatment. Do after Articles 1–6 of agents-at-scale are compl
 - P4-S: `horizontal_scale_compatible` (stateless pods?), `hpa_configurable`
 - P5-S: `rolling_upgrade_simultaneous_versions`, `checkpoint_forward_compat`
 
-**Statistical treatment:** Bootstrap CI at each C value. Report inflection point (concurrency level where p99 latency doubles from C=1 baseline). Amdahl's Law framing: serialized fraction = 1 - speedup/(C).
+**Statistical treatment:**
+- Bootstrap CI at each C value (10 trial runs per C level)
+- Fit linear/polynomial model to the load curve; report R² and inflection point (concurrency level where p99 latency doubles from C=1 baseline)
+- Amdahl's Law framing: serialized fraction s = 1 - speedup/C; report s per framework
+
+**Key publishable finding:** A framework whose checkpoint write is a mutex (e.g. LangGraph MemorySaver) hits a scaling ceiling at ~8–10 concurrent agents regardless of pod count — Amdahl's Law applied to the checkpoint serialization fraction. This is a concrete, quantified operability limit that no single-agent test can reveal.
 
 **This becomes the primary Article 7 contribution** — what the agents-at-scale build reveals about each framework's operability under real fleet load.
 
@@ -242,7 +307,7 @@ Full statistical treatment. Do after Articles 1–6 of agents-at-scale are compl
 |---|---|---|
 | Cluster bootstrap CI | agentlens `stats/bootstrap.py` — copy, do not import | Cites Efron 1979; Davison & Hinkley 1997 |
 | Wilcoxon + Cliff's delta | agentlens `stats/_wilcoxon.py` — copy | Cites Demšar 2006 JMLR; Cliff 1993 |
-| McNemar's test | agentlens `stats/_mcnemar.py` — copy | Cites Dietterich 1998 |
+| McNemar's test | agentlens `stats/_mcnemar.py` — copy | Cites Dietterich 1998; for paired binary comparisons across frameworks |
 | BH-FDR | agentlens `stats/multiplicity.py` — copy | Cites Benjamini & Hochberg 1995 |
 | Cohen's κ (weighted) | agentlens `stats/_kappa.py` — copy | Cites Cohen 1960; threshold 0.6 from agentlens |
 | Krippendorff's α | agentlens `stats/_alpha.py` — copy | Cites Krippendorff 1970 |
