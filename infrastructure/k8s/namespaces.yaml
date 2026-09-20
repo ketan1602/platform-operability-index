@@ -1,0 +1,67 @@
+# POI Benchmark — Namespace Definitions
+# Managed by: infrastructure/k8s/install.sh
+# Do not edit labels manually — they are referenced by Kyverno ClusterPolicies.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poi-langgraph
+  labels:
+    poi.benchmark/managed: "true"
+    poi.benchmark/framework: langgraph
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poi-ms-agent
+  labels:
+    poi.benchmark/managed: "true"
+    poi.benchmark/framework: ms-agent
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poi-openai-sdk
+  labels:
+    poi.benchmark/managed: "true"
+    poi.benchmark/framework: openai-sdk
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poi-google-adk
+  labels:
+    poi.benchmark/managed: "true"
+    poi.benchmark/framework: google-adk
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poi-strands
+  labels:
+    poi.benchmark/managed: "true"
+    poi.benchmark/framework: strands
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poi-monitoring
+  labels:
+    poi.benchmark/managed: "true"
+    poi.benchmark/framework: monitoring
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-a
+  labels:
+    poi.benchmark/managed: "true"
+    poi.benchmark/framework: test-tenant
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-b
+  labels:
+    poi.benchmark/managed: "true"
+    poi.benchmark/framework: test-tenant

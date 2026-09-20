@@ -1,0 +1,14 @@
+apiVersion: v2
+name: poi-langgraph
+description: POI Benchmark — LangGraph golden-path agent template
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - poi
+  - benchmark
+  - langgraph
+  - agent
+maintainers:
+  - name: POI Benchmark Team
+    email: ketan.sethi@accenture.com

@@ -1,0 +1,29 @@
+# POI Strands Agents Helm Chart — Default Values
+# Required values are left empty ("") — Helm will fail-fast if not supplied.
+# Strands ships with built-in OTel; set OTEL_EXPORTER_OTLP_ENDPOINT to activate.
+
+agent:
+  image: ""
+  imagePullPolicy: Always
+  replicas: 1
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+llm:
+  base_url: ""
+  api_key_secret_name: "airefinery-creds"
+  api_key: ""
+
+otel:
+  endpoint: ""
+
+tenant:
+  name: ""
+  namespace: "poi-strands"
+
+env: []

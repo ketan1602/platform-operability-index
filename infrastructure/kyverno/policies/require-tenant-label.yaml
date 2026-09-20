@@ -1,0 +1,71 @@
+# Kyverno ClusterPolicy — require-tenant-label
+# Enforces that every Deployment in a poi-* namespace:
+#   1. Has label poi.benchmark/tenant with a non-empty value.
+#   2. The tenant label value equals the Deployment's namespace name
+#      (prevents cross-tenant spoofing).
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-tenant-label
+  annotations:
+    policies.kyverno.io/title: Require poi.benchmark/tenant Label
+    policies.kyverno.io/category: POI Benchmark Compliance — Pillar 2
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >
+      Every Deployment in a poi-* namespace must carry the label
+      poi.benchmark/tenant and its value must equal the namespace name.
+      This prevents a pod deployed in poi-langgraph from claiming tenant
+      identity of poi-ms-agent or any other framework namespace.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: check-tenant-label-present
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaceSelector:
+                matchExpressions:
+                  - key: poi.benchmark/managed
+                    operator: In
+                    values:
+                      - "true"
+      validate:
+        message: >
+          Deployment must have label poi.benchmark/tenant with a non-empty value
+          matching its namespace (prevents cross-tenant identity spoofing).
+        pattern:
+          metadata:
+            labels:
+              "poi.benchmark/tenant": "?*"
+          spec:
+            template:
+              metadata:
+                labels:
+                  "poi.benchmark/tenant": "?*"
+
+    - name: check-tenant-label-matches-namespace
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaceSelector:
+                matchExpressions:
+                  - key: poi.benchmark/managed
+                    operator: In
+                    values:
+                      - "true"
+      validate:
+        message: >
+          Label poi.benchmark/tenant must equal the Deployment namespace.
+          A pod in poi-langgraph must carry tenant=poi-langgraph, not another value.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.metadata.labels.\"poi.benchmark/tenant\" }}"
+                operator: NotEquals
+                value: "{{ request.object.metadata.namespace }}"

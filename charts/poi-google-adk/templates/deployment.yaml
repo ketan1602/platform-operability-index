@@ -1,0 +1,71 @@
+{{- if not .Values.agent.image -}}
+  {{- fail "agent.image is required." -}}
+{{- end -}}
+{{- if not .Values.litellm.base_url -}}
+  {{- fail "litellm.base_url is required (AI Refinery / LiteLLM endpoint)." -}}
+{{- end -}}
+{{- if not .Values.otel.endpoint -}}
+  {{- fail "otel.endpoint is required." -}}
+{{- end -}}
+{{- if not .Values.tenant.name -}}
+  {{- fail "tenant.name is required and must match the deployment namespace." -}}
+{{- end -}}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.tenant.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: Helm
+    poi.benchmark/framework: google-adk
+    poi.benchmark/tenant: {{ .Values.tenant.name | quote }}
+    poi.benchmark/managed: "true"
+spec:
+  replicas: {{ .Values.agent.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name }}
+        poi.benchmark/framework: google-adk
+        poi.benchmark/tenant: {{ .Values.tenant.name | quote }}
+        poi.benchmark/managed: "true"
+    spec:
+      containers:
+        - name: agent
+          image: {{ .Values.agent.image | quote }}
+          imagePullPolicy: {{ .Values.agent.imagePullPolicy }}
+          resources:
+            requests:
+              cpu: {{ .Values.agent.resources.requests.cpu | quote }}
+              memory: {{ .Values.agent.resources.requests.memory | quote }}
+            limits:
+              cpu: {{ .Values.agent.resources.limits.cpu | quote }}
+              memory: {{ .Values.agent.resources.limits.memory | quote }}
+          env:
+            - name: ADK_RUNNER
+              value: local
+            - name: LITELLM_BASE_URL
+              value: {{ .Values.litellm.base_url | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ printf "poi-%s" .Release.Name | quote }}
+            - name: POI_FRAMEWORK
+              value: google-adk
+            - name: POI_TENANT
+              value: {{ .Values.tenant.name | quote }}
+            - name: AIREFINERY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.llm.api_key_secret_name | quote }}
+                  key: api_key
+            {{- range .Values.env }}
+            - name: {{ .name | quote }}
+              value: {{ .value | quote }}
+            {{- end }}

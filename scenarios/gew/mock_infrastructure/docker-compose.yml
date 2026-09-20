@@ -1,0 +1,51 @@
+version: "3.9"
+
+networks:
+  poi-mock-net:
+    driver: bridge
+
+services:
+  mock-api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+    command: ["python", "mock_api_server.py"]
+    ports:
+      - "8001:8001"
+    networks:
+      - poi-mock-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mock-crm-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+    command: ["python", "mock_crm_server.py"]
+    ports:
+      - "8002:8002"
+    networks:
+      - poi-mock-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  approval-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+    command: ["python", "approval_server.py"]
+    ports:
+      - "8003:8003"
+    networks:
+      - poi-mock-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

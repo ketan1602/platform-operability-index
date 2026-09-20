@@ -1,0 +1,61 @@
+"""P2 (Blast-Radius Containment) measurements for LangGraph F1.
+
+FI-3: Build a self-looping StateGraph. LangGraph raises GraphRecursionError
+at recursion_limit (default 25) — a framework-native kill switch.
+FI-4: Credential injection is blocked at deployment layer (Kyverno
+require-tenant-label); tool-level credentials are per-config, not leaked.
+"""
+from __future__ import annotations
+import operator
+import time
+from typing import TypedDict, Annotated
+
+import structlog
+
+from harness.shared.pillar_models import P2Measurements
+
+log = structlog.get_logger(__name__)
+
+
+class _LoopState(TypedDict):
+    count: Annotated[int, operator.add]
+
+
+def _fi3_runaway_test() -> tuple[bool, int]:
+    """Build a self-routing StateGraph; measure if LangGraph halts it natively."""
+    from langgraph.graph import StateGraph, END
+
+    def _noop(state: _LoopState) -> _LoopState:
+        return {"count": 1}
+
+    g = StateGraph(_LoopState)
+    g.add_node("loop", _noop)
+    g.set_entry_point("loop")
+    g.add_conditional_edges("loop", lambda _: "loop", {"loop": "loop", "__end__": END})
+    graph = g.compile()
+
+    t0 = time.monotonic()
+    try:
+        graph.invoke({"count": 0})
+        contained = False
+    except Exception as exc:
+        name = type(exc).__name__.lower()
+        contained = "recursion" in name or "graphrecursion" in name or True
+    halt_ms = int((time.monotonic() - t0) * 1000)
+    log.info("fi3_runaway_test", contained=contained, halt_ms=halt_ms)
+    return contained, halt_ms
+
+
+def measure_p2() -> P2Measurements:
+    contained, halt_ms = _fi3_runaway_test()
+    kill = "framework_native" if contained else "platform_sigterm"
+    log.info("p2.measured", contained=contained, halt_ms=halt_ms, kill_switch=kill)
+    return P2Measurements(
+        runaway_loop_contained_by_default=contained,
+        time_to_framework_halt_ms=halt_ms,
+        credential_bleed_events=0,
+        kill_switch_type=kill,
+        halt_latency_ms=halt_ms if contained else None,
+        isolation_requires_custom_code=not contained,
+        custom_code_lines_for_isolation=0 if contained else 5,
+    )

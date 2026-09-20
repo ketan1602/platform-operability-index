@@ -1,0 +1,43 @@
+# Kyverno ClusterPolicy — require-otel
+# Enforces that every Deployment in a poi-* namespace sets OTEL_EXPORTER_OTLP_ENDPOINT.
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-otel
+  annotations:
+    policies.kyverno.io/title: Require OTEL_EXPORTER_OTLP_ENDPOINT
+    policies.kyverno.io/category: POI Benchmark Compliance
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >
+      Every Deployment in a poi-* namespace must declare the env var
+      OTEL_EXPORTER_OTLP_ENDPOINT so that agent traces and metrics
+      are routed to the POI OTel Collector.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: check-otel-exporter-otlp-endpoint
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaceSelector:
+                matchExpressions:
+                  - key: poi.benchmark/managed
+                    operator: In
+                    values:
+                      - "true"
+      validate:
+        message: >
+          Deployment must set OTEL_EXPORTER_OTLP_ENDPOINT.
+          See charts/poi-*/values.yaml otel.endpoint.
+        foreach:
+          - list: "request.object.spec.template.spec.containers"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.env[?name=='OTEL_EXPORTER_OTLP_ENDPOINT'] | length(@) }}"
+                    operator: Equals
+                    value: "0"

@@ -1,0 +1,36 @@
+# POI LangGraph Helm Chart — Default Values
+# Required values are left empty ("") — Helm will fail-fast if not supplied.
+# Supply secrets at install time: helm install ... --set llm.api_key=$AIREFINERY_API_KEY
+# Never hardcode secrets here.
+
+agent:
+  image: ""               # required: e.g. harbor.internal/platform/poi-langgraph:0.1.0
+  imagePullPolicy: Always
+  replicas: 1
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+checkpoint:
+  backend_url: ""         # required: postgresql://user:pass@host:5432/poi_checkpoints
+                          # Supply via --set checkpoint.backend_url=... or values override file
+
+otel:
+  endpoint: ""            # required: http://otel-collector.poi-monitoring:4317
+
+llm:
+  api_key_secret_name: "airefinery-creds"   # name of K8s Secret that holds api_key
+  api_key: ""             # required at install: --set llm.api_key=$AIREFINERY_API_KEY
+                          # never commit a real value here
+
+tenant:
+  name: ""                # required: must match the deployment namespace name
+  namespace: "poi-langgraph"
+
+env: []                   # additional env vars, e.g.:
+                          # - name: LOG_LEVEL
+                          #   value: info

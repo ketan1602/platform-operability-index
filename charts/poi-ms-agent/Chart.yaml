@@ -1,0 +1,6 @@
+apiVersion: v2
+name: poi-ms-agent
+description: POI benchmark — Microsoft AutoGen agent golden-path Helm chart
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

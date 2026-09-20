@@ -1,0 +1,73 @@
+# POI Benchmark Run Schema v1
+# Every adapter subprocess writes a YAML file conforming to this envelope.
+# Fields marked (required) must be present; others may be null if the pillar was not run.
+
+run_metadata:
+  run_id: str                   # UUID4
+  date: str                     # ISO8601
+  framework_id: str             # F1 | F2 | F3 | F4 | F5
+  framework_version: str        # pinned version string
+  scenario_id: str              # GEW | TCW
+  implementation_type: str      # fixed | idiomatic
+  pillar: str                   # p1 | p2 | p3 | p4 | p5 | all
+  infrastructure: str           # orbstack-k8s | azure | aws
+  runner: str                   # identifier of the person/system that ran this
+
+pillar_scores:
+  p1: int|null                  # 0-3
+  p2: int|null
+  p3: int|null
+  p4: int|null
+  p5: int|null
+  poi_total: int                 # sum of non-null scores
+
+operability_tax:
+  ot_loc: int                   # total lines of custom platform glue code
+  ot_hrs: float                 # one-time platform engineering hours to reach score-3
+  ot_recurring_hrs_per_yr: float
+
+raw_measurements:
+  p1:
+    resume_latency_ms: int|null
+    steps_re_executed_on_resume: int|null       # target: 0
+    duplicate_tool_calls_on_mid_write: int|null # target: 0
+    checkpoint_format: opaque|parseable|human_readable|null
+    concurrent_resume_collision: prevented_by_framework|prevented_by_config|not_prevented|null
+    manual_watchdog_required: bool|null
+    custom_code_lines_to_reach_score_3: int
+  p2:
+    runaway_loop_contained_by_default: bool|null
+    time_to_framework_halt_ms: int|null
+    credential_bleed_events: int|null           # target: 0
+    kill_switch_type: framework_native|platform_sigterm|no_mechanism|null
+    halt_latency_ms: int|null
+    isolation_requires_custom_code: bool|null
+    custom_code_lines_for_isolation: int
+  p3:
+    required_attributes_emitted_by_default: list[str]
+    missing_required_attributes: list[str]
+    alert_fired_without_custom_code: bool|null
+    alert_latency_ms: int|null
+    custom_exporter_required: bool|null
+    custom_exporter_loc: int
+    proprietary_backend_required: bool|null
+    oss_stack_viable: bool|null
+  p4:
+    template_creation_time_hrs: float|null
+    template_loc: int
+    framework_specific_hacks_required: list[str]
+    policy_authorable_without_framework_internals: bool|null
+    required_framework_internal_hooks: list[str]
+    one_day_deployment_achieved: bool|null
+    deployment_time_hrs: float|null
+    blockers_encountered: list[str]
+  p5:
+    api_breaking_changes_in_patch: int|null
+    schema_breaking_changes_in_patch: int|null
+    checkpoint_migration_required: bool|null
+    prompt_rewrites_required: int|null
+    changelog_breaking_changes_per_release_avg: float|null
+    estimated_fleet_upgrade_hrs_per_release_cycle: float|null
+
+error: str|null                 # populated if the run failed
+notes: str                      # freeform observations and anomalies

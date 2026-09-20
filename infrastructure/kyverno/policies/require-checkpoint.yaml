@@ -1,0 +1,45 @@
+# Kyverno ClusterPolicy — require-checkpoint
+# Enforces that every Deployment in a poi-* namespace sets CHECKPOINT_BACKEND_URL.
+# background: false — only validates on admission, not retroactively.
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-checkpoint
+  annotations:
+    policies.kyverno.io/title: Require CHECKPOINT_BACKEND_URL
+    policies.kyverno.io/category: POI Benchmark Compliance
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >
+      Every Deployment in a poi-* namespace must declare the env var
+      CHECKPOINT_BACKEND_URL with a non-empty value so that the agent
+      checkpoint subsystem can persist state across iterations.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: check-checkpoint-backend-url
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaceSelector:
+                matchExpressions:
+                  - key: poi.benchmark/managed
+                    operator: In
+                    values:
+                      - "true"
+      validate:
+        message: >
+          Deployment must set CHECKPOINT_BACKEND_URL env var.
+          See charts/poi-*/values.yaml checkpoint.backend_url.
+        foreach:
+          - list: "request.object.spec.template.spec.containers"
+            deny:
+              conditions:
+                all:
+                  # Deny if no element in env[] has name==CHECKPOINT_BACKEND_URL with non-empty value
+                  - key: "{{ element.env[?name=='CHECKPOINT_BACKEND_URL'] | length(@) }}"
+                    operator: Equals
+                    value: "0"

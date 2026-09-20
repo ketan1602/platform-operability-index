@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "poi-harness"
+version = "0.1.0"
+description = "Platform Operability Index — benchmark harness"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "structlog>=24.0",
+    "requests>=2.31",
+    "airefinery-sdk",
+]
+
+[project.scripts]
+poi-run = "harness.runner:main"
+poi-full-run = "harness.full_run:main"
+
+[tool.hatch.envs.mock]
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.0",
+]
+
+[tool.hatch.envs.mock.scripts]
+api   = "uvicorn scenarios.gew.mock_infrastructure.mock_api_server:app --port 8001 --reload"
+crm   = "uvicorn scenarios.gew.mock_infrastructure.mock_crm_server:app --port 8002 --reload"
+approval = "uvicorn scenarios.gew.mock_infrastructure.approval_server:app --port 8003 --reload"

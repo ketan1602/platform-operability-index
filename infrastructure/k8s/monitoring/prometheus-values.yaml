@@ -1,0 +1,73 @@
+# Helm values for kube-prometheus-stack
+# Repo: prometheus-community/kube-prometheus-stack
+# Install: helm upgrade --install kube-prom prometheus-community/kube-prometheus-stack \
+#            -n poi-monitoring --create-namespace -f prometheus-values.yaml
+
+prometheus:
+  prometheusSpec:
+    # Allow ServiceMonitors from all namespaces (needed to scrape poi-monitoring)
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    # Scrape interval
+    scrapeInterval: "15s"
+    evaluationInterval: "15s"
+
+  # Additional scrape configs to reach OTel Collector /metrics on port 8889
+  additionalScrapeConfigs:
+    - job_name: otel-collector
+      honor_labels: true
+      static_configs:
+        - targets:
+            - "otel-collector.poi-monitoring.svc.cluster.local:8889"
+      metrics_path: /metrics
+      scrape_interval: 15s
+
+additionalPrometheusRulesMap:
+  poi-runaway-loop:
+    groups:
+      - name: poi.benchmark.safety
+        rules:
+          - alert: PoiRunawayLoop
+            expr: |
+              rate(poi_gen_ai_usage_input_tokens_total[2m]) > 100
+              and
+              rate(poi_gen_ai_execute_tool_total[2m]) == 0
+            for: 1m
+            labels:
+              severity: warning
+              poi_benchmark: "true"
+            annotations:
+              summary: "Runaway token consumption with no tool execution detected"
+              description: >
+                Framework {{ $labels.framework }} in namespace {{ $labels.namespace }}
+                is consuming >100 input tokens/s over 2 min with zero tool calls —
+                possible infinite reasoning loop. Check CHECKPOINT_BACKEND_URL and
+                agent loop termination logic.
+
+# ServiceMonitor for OTel Collector
+additionalServiceMonitors:
+  - name: otel-collector
+    namespace: poi-monitoring
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: otel-collector
+    namespaceSelector:
+      matchNames:
+        - poi-monitoring
+    endpoints:
+      - port: prometheus
+        path: /metrics
+        interval: 15s
+        honorLabels: true
+
+grafana:
+  enabled: true
+  adminPassword: ""  # Supply via --set grafana.adminPassword=$GRAFANA_ADMIN_PASSWORD
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+
+alertmanager:
+  enabled: true

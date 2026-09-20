@@ -1,0 +1,48 @@
+# Kyverno ClusterPolicy — require-resource-limits
+# Enforces that every container in a Deployment in poi-* namespaces
+# has both CPU and memory limits set (Pillar 2: blast-radius containment).
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require CPU and Memory Limits
+    policies.kyverno.io/category: POI Benchmark Compliance — Pillar 2
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >
+      Every container in a poi-* Deployment must declare CPU and memory
+      limits. This enforces blast-radius containment so a runaway agent
+      loop cannot starve the shared node of resources.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: check-resource-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaceSelector:
+                matchExpressions:
+                  - key: poi.benchmark/managed
+                    operator: In
+                    values:
+                      - "true"
+      validate:
+        message: >
+          All containers must have CPU and memory limits for blast-radius
+          containment (Pillar 2). Add resources.limits.cpu and
+          resources.limits.memory to each container spec.
+        foreach:
+          - list: "request.object.spec.template.spec.containers"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.resources.limits.cpu | length(@) }}"
+                    operator: Equals
+                    value: "0"
+                  - key: "{{ element.resources.limits.memory | length(@) }}"
+                    operator: Equals
+                    value: "0"

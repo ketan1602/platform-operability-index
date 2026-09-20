@@ -1,0 +1,29 @@
+# POI Microsoft AutoGen Helm Chart — Default Values
+# Required values are left empty ("") — Helm will fail-fast if not supplied.
+# Supply secrets at install time: helm install ... --set llm.api_key=$AIREFINERY_API_KEY
+
+agent:
+  image: ""
+  imagePullPolicy: Always
+  replicas: 1
+  maxTurns: 10
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+otel:
+  endpoint: ""
+
+llm:
+  api_key_secret_name: "airefinery-creds"
+  api_key: ""
+
+tenant:
+  name: ""
+  namespace: "poi-ms-agent"
+
+env: []
