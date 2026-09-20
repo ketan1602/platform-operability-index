@@ -1,8 +1,8 @@
 """P4 (Golden-Path Packageability) measurements for LangGraph F1.
 
 Measures the poi-langgraph Helm chart at charts/poi-langgraph/:
-- template_loc: non-blank, non-comment lines across all *.yaml files
-- template_creation_time_hrs: 3.5 h (observed during M1 chart authoring)
+- template_loc: non-blank, non-comment lines across all *.yaml files (counted in code)
+- framework_specific_hacks_required: K8s workarounds documented below
 - Kyverno policies are authored against generic K8s primitives (labels, env
   vars) — no LangGraph internals required.
 """
@@ -39,12 +39,10 @@ def measure_p4() -> P4Measurements:
     ]
     log.info("p4.measured", template_loc=template_loc, hacks=len(hacks))
     return P4Measurements(
-        template_creation_time_hrs=3.5,
         template_loc=template_loc,
         framework_specific_hacks_required=hacks,
         policy_authorable_without_framework_internals=True,
         required_framework_internal_hooks=[],
         one_day_deployment_achieved=True,
-        deployment_time_hrs=0.5,
         blockers_encountered=[],
     )

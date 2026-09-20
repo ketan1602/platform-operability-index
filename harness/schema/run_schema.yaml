@@ -53,21 +53,25 @@ raw_measurements:
     proprietary_backend_required: bool|null
     oss_stack_viable: bool|null
   p4:
-    template_creation_time_hrs: float|null
-    template_loc: int
-    framework_specific_hacks_required: list[str]
+    template_loc: int                                        # counted by _count_template_loc() — not self-reported
+    framework_specific_hacks_required: list[str]            # documented in each p4_measure.py — auditable
     policy_authorable_without_framework_internals: bool|null
     required_framework_internal_hooks: list[str]
     one_day_deployment_achieved: bool|null
-    deployment_time_hrs: float|null
     blockers_encountered: list[str]
+    # Informational only (not scored): kept for reference, never feeds score_p4()
+    template_creation_time_hrs: float|null
+    deployment_time_hrs: float|null
   p5:
     api_breaking_changes_in_patch: int|null
     schema_breaking_changes_in_patch: int|null
-    checkpoint_migration_required: bool|null
+    checkpoint_migration_required: bool|null                 # from changelog
     prompt_rewrites_required: int|null
-    changelog_breaking_changes_per_release_avg: float|null
-    estimated_fleet_upgrade_hrs_per_release_cycle: float|null
+    changelog_breaking_changes_per_release_avg: float|null  # scored
+    # Reproducible proxy (not yet self-reported): set when a harness N→N+1 upgrade is performed
+    harness_upgrade_observed_hrs: float|null
+    # Excluded from scoring — self-reported and not independently reproducible
+    # estimated_fleet_upgrade_hrs_per_release_cycle: removed in credibility rebuild
 
 error: str|null                 # populated if the run failed
 notes: str                      # freeform observations and anomalies

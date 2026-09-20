@@ -109,9 +109,43 @@ def _print_ranking(matrix: dict, ot: dict) -> None:
         print(f"  #{rank}  {name:<18}  POI={scores['poi_total']}  OT={loc} LOC")
 
 
+def _sensitivity_analysis(matrix: dict, n: int = 1000) -> None:
+    """Rank stability under n Dirichlet(alpha=1) random weight vectors."""
+    import random
+    fids = sorted(matrix.keys())
+    vecs = {fid: [matrix[fid].get(p, 0) for p in _PILLARS] for fid in fids}
+    eq_order = sorted(fids, key=lambda f: (-matrix[f]["poi_total"], f))
+    adjacents = [(eq_order[i], eq_order[i + 1]) for i in range(len(eq_order) - 1)]
+    pair_wins = {pair: 0 for pair in adjacents}
+    rank_hold = 0
+
+    for _ in range(n):
+        raw = [random.gammavariate(1, 1) for _ in _PILLARS]
+        total = sum(raw)
+        w = [r / total for r in raw]
+        ws = {fid: sum(wi * si for wi, si in zip(w, vecs[fid])) for fid in fids}
+        ranked = sorted(fids, key=lambda f: (-ws[f], f))
+        if ranked == eq_order:
+            rank_hold += 1
+        for a, b in adjacents:
+            if ws[a] > ws[b]:
+                pair_wins[(a, b)] += 1
+
+    print(f"\n=== Sensitivity Analysis ({n} Dirichlet weight samples) ===")
+    print("Pairwise rank stability (% of weight vectors where equal-weight order holds):")
+    for (a, b), wins in pair_wins.items():
+        pct = round(wins / n * 100)
+        tag = "stable" if pct >= 80 else ("contested" if pct >= 60 else "fragile")
+        na, nb = _FW_NAMES.get(a, a), _FW_NAMES.get(b, b)
+        print(f"  {na:>18} > {nb:<18}  {pct:>3}%  [{tag}]")
+    print(f"Full ranking unchanged: {round(rank_hold / n * 100)}% of draws")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="POI benchmark report")
     p.add_argument("--results-dir", type=Path, default=_DEFAULT_RESULTS)
+    p.add_argument("--no-sensitivity", action="store_true",
+                   help="Skip sensitivity analysis (faster)")
     args = p.parse_args()
 
     records = _load(args.results_dir)
@@ -125,6 +159,8 @@ def main() -> None:
     _print_score_matrix(matrix)
     _print_ot_table(ot, matrix)
     _print_ranking(matrix, ot)
+    if not args.no_sensitivity:
+        _sensitivity_analysis(matrix)
     print()
 
 

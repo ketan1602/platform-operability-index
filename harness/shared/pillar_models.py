@@ -59,4 +59,5 @@ class P5Measurements(BaseModel):
     checkpoint_migration_required: Optional[bool] = None
     prompt_rewrites_required: Optional[int] = None
     changelog_breaking_changes_per_release_avg: Optional[float] = None
-    estimated_fleet_upgrade_hrs_per_release_cycle: Optional[float] = None
+    # Not scored. Set when an actual harness upgrade N→N+1 is performed.
+    harness_upgrade_observed_hrs: Optional[float] = None

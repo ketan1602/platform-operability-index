@@ -74,9 +74,11 @@ Can the framework be packaged as a Helm chart that passes Kyverno policy enforce
 | Score | Criterion |
 |---|---|
 | 0 | No Helm-compatible packaging path |
-| 1 | Helm chart requires > 200 lines of custom templates |
-| 2 | Helm chart 100–200 lines; manual Kyverno workarounds needed |
-| 3 | Helm chart < 100 lines; passes all Kyverno ClusterPolicies without hacks |
+| 1 | Helm chart > 200 lines of custom templates |
+| 2 | Helm chart ≤ 200 lines but requires framework-specific K8s workarounds |
+| 3 | Helm chart ≤ 200 lines, zero framework-specific workarounds, policy fully authorable from K8s primitives |
+
+**Scoring inputs are fully observable:** `template_loc` is counted by `_count_template_loc()` at measurement time; `framework_specific_hacks_required` is a documented list in each `p4_measure.py`. Self-reported time fields (`template_creation_time_hrs`, `deployment_time_hrs`) are recorded in raw data but **not scored**.
 
 **Kyverno policies enforced:** CHECKPOINT_BACKEND_URL set, OTEL_EXPORTER_OTLP_ENDPOINT set, tenant label present, resource limits declared, secrets via `secretKeyRef` only.
 
@@ -90,7 +92,7 @@ How often does a patch-level upgrade require code changes, schema migrations, or
 | 2 | < 1 breaking change per release; no schema migration required |
 | 3 | Zero breaking changes in patch; stable checkpoint schema; no prompt rewrites |
 
-**Measurement:** desk research on changelog history + `api_breaking_changes_in_patch`, `checkpoint_migration_required`, `prompt_rewrites_required` fields.
+**Scoring inputs:** `changelog_breaking_changes_per_release_avg` (desk research on changelog) and `checkpoint_migration_required`. `estimated_fleet_upgrade_hrs_per_release_cycle` has been **removed from scoring** — it is a self-reported estimate that cannot be independently reproduced. The field `harness_upgrade_observed_hrs` is reserved for when an actual N→N+1 harness upgrade is timed and recorded.
 
 ---
 
@@ -121,10 +123,25 @@ Lines of custom code your team must write to reach production-grade operability:
 ### Ranking
 
 1. **LangGraph** — POI 9, OT 179 LOC. Wins P2 outright (native recursion-limit catches runaway loops with a structured `GraphRecursionError`). Strongest checkpoint story (MemorySaver → PostgresSaver without code change).
-2. **Strands** — POI 9, OT 195 LOC. Best P4 (leanest Helm chart) and ties P5 (most stable API). Loses P1 because checkpoint/resume requires a custom state-serialisation wrapper.
+2. **Strands** — POI 9, OT 195 LOC. Best P4 (zero framework-specific K8s workarounds) and ties P5 (most stable API). Loses P1 because checkpoint/resume requires a custom state-serialisation wrapper.
 3. **Google ADK** — POI 8, OT 221 LOC. Solid P1 via `InMemorySessionService` (parseable format); highest OT because the session backend swap and LiteLLM routing layer add scaffolding.
 4. **OpenAI SDK** — POI 7, OT 124 LOC. Lowest OT of all — but checkpoint state lives in OpenAI's backend and is not portable. Excellent P5 (most stable changelog).
 5. **AutoGen/MS** — POI 5, OT 135 LOC. Weakest durability (no native checkpoint); high P5 cost (3+ breaking changes per release on average).
+
+### Ranking Stability (Sensitivity Analysis)
+
+POI uses equal pillar weights, which is an assumption. To quantify the risk of that assumption, `analysis/poi_report.py` samples 1,000 weight vectors from a Dirichlet(α=1) distribution (uniform over the weight simplex) and re-runs the ranking under each.
+
+| Pairwise comparison | % of weight vectors where order holds | Interpretation |
+|---|---|---|
+| LangGraph > Strands | 48% | **Fragile** — effectively a coin flip; the equal-weight tie reflects genuine closeness |
+| Strands > Google ADK | 71% | Contested — Strands' P3/P4/P5 advantage offset by ADK's P1 lead |
+| Google ADK > OpenAI SDK | 67% | Contested — sensitive to how much P1 vs P5 is weighted |
+| OpenAI SDK > AutoGen | 100% | **Stable** — OpenAI SDK is categorically ahead regardless of weights |
+
+**Full ranking unchanged in 15% of draws.** The honest conclusion: equal-weight POI rankings below #3 should be read as directional signals, not definitive orderings. The one robust finding is that AutoGen trails all others under any reasonable weighting.
+
+Run `python3 analysis/poi_report.py` to reproduce.
 
 ---
 
@@ -235,11 +252,11 @@ platform-operability-index/
 
 **Pydantic v1/v2 compatibility.** The harness shared layer works with both versions: all serialisation routes through `model_dump_json()` (v2) / `.json()` (v1) → `json.loads()` → PyYAML, avoiding enum-tagging bugs.
 
-**OT-LOC measurement.** Operability Tax is the sum of custom lines needed to reach score-3 behaviour:
-- `custom_code_lines_to_reach_score_3` — P1 checkpoint wrapper
-- `custom_code_lines_for_isolation` — P2 kill-switch glue
-- `custom_exporter_loc` — P3 OTel exporter shim
-- `template_loc` — P4 Helm template count
+**OT-LOC measurement.** Operability Tax is the sum of custom lines needed to reach score-3 behaviour. All inputs are counted by code or documented in source — no self-reported estimates:
+- `custom_code_lines_to_reach_score_3` — P1 checkpoint wrapper (LOC estimate in each adapter)
+- `custom_code_lines_for_isolation` — P2 kill-switch glue (LOC estimate in each adapter)
+- `custom_exporter_loc` — P3 OTel exporter shim (LOC count)
+- `template_loc` — P4 Helm template LOC counted by `_count_template_loc()`
 
 ---
 

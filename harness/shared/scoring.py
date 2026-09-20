@@ -72,40 +72,55 @@ def score_p3(m: P3Measurements) -> int:
 
 
 def score_p4(m: P4Measurements) -> int:
-    """P4 — Golden-Path Packageability."""
+    """P4 — Golden-Path Packageability.
+
+    Scoring inputs are all observable from the repo:
+      template_loc      — counted by _count_template_loc() in each p4_measure.py
+      framework_specific_hacks_required — documented list in each p4_measure.py
+      policy_authorable_without_framework_internals — boolean desk-check
+    Self-reported time fields (template_creation_time_hrs, deployment_time_hrs)
+    are not scored; they may appear in raw data for reference only.
+    """
     if not m.one_day_deployment_achieved:
         return 0
 
-    hrs = m.template_creation_time_hrs
-    if hrs is None or hrs > 8:
+    loc = m.template_loc or 0
+    if loc > 200:
         return 1
 
-    if (
-        hrs <= 4
-        and m.policy_authorable_without_framework_internals
-        and not m.framework_specific_hacks_required
-    ):
+    hacks = m.framework_specific_hacks_required or []
+    if not hacks and m.policy_authorable_without_framework_internals:
         return 3
 
     return 2
 
 
 def score_p5(m: P5Measurements) -> int:
-    """P5 — Day-2 Migration Fragility (inverted: higher = less fragile)."""
+    """P5 — Day-2 Migration Fragility (inverted: higher = less fragile).
+
+    Scores are derived from two reproducible inputs:
+      changelog_breaking_changes_per_release_avg — desk research on changelog
+      checkpoint_migration_required              — boolean from changelog
+
+    estimated_fleet_upgrade_hrs_per_release_cycle is intentionally excluded
+    from scoring: it is a self-reported estimate that cannot be independently
+    reproduced.  The field harness_upgrade_observed_hrs (populated when an
+    actual N→N+1 harness upgrade is performed) will replace it in a future
+    measurement cycle.
+    """
     avg = m.changelog_breaking_changes_per_release_avg
-    fleet = m.estimated_fleet_upgrade_hrs_per_release_cycle
     migr = m.checkpoint_migration_required
 
-    if avg is None or fleet is None:
+    if avg is None:
         return 0
 
-    if avg > 5 or fleet > 80:
+    if avg > 5:
         return 0
 
-    if avg < 1 and not migr and fleet < 10:
+    if avg < 1 and not migr:
         return 3
 
-    if avg <= 2 and not migr and fleet <= 40:
+    if avg <= 2 and not migr:
         return 2
 
     return 1

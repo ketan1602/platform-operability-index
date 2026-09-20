@@ -37,12 +37,10 @@ def measure_p4() -> P4Measurements:
     ]
     log.info("p4.measured", framework="F3", template_loc=template_loc)
     return P4Measurements(
-        template_creation_time_hrs=2.5,
         template_loc=template_loc,
         framework_specific_hacks_required=hacks,
         policy_authorable_without_framework_internals=True,
         required_framework_internal_hooks=[],
         one_day_deployment_achieved=True,
-        deployment_time_hrs=0.5,
         blockers_encountered=[],
     )

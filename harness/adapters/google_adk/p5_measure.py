@@ -19,12 +19,10 @@ def measure_p5() -> P5Measurements:
         checkpoint_migration_required=False,
         prompt_rewrites_required=1,
         changelog_breaking_changes_per_release_avg=1.5,
-        estimated_fleet_upgrade_hrs_per_release_cycle=25.0,
     )
     log.info(
         "p5.measured",
         framework="F4",
         avg_breaking=m.changelog_breaking_changes_per_release_avg,
-        fleet_hrs=m.estimated_fleet_upgrade_hrs_per_release_cycle,
     )
     return m
