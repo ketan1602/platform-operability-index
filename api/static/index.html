@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POI — Platform Operability Index</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Platform Operability Index</h1>
+      <p class="muted">5 frameworks × 5 pillars × 2 scenarios × 2 implementations</p>
+    </div>
+    <div id="preflight" class="preflight" aria-live="polite"></div>
+  </header>
+
+  <main class="layout">
+    <section class="card" id="run-card">
+      <h2>Run benchmark</h2>
+
+      <fieldset>
+        <legend>Mode</legend>
+        <div class="segmented" role="radiogroup">
+          <label><input type="radio" name="mode" value="live" checked> Live LLM</label>
+          <label><input type="radio" name="mode" value="dry_run"> Dry run</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Frameworks</legend>
+        <div class="checks" id="fw-checks"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Scenarios</legend>
+        <div class="checks">
+          <label><input type="checkbox" name="scenario" value="GEW" checked> GEW — enterprise approval</label>
+          <label><input type="checkbox" name="scenario" value="TCW" checked> TCW — telco CVM/NBA</label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Implementations</legend>
+        <div class="checks">
+          <label><input type="checkbox" name="impl" value="fixed" checked> Fixed</label>
+          <label><input type="checkbox" name="impl" value="idiomatic" checked> Idiomatic</label>
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button id="run-btn" class="primary">Run</button>
+        <button id="stop-btn" disabled>Stop</button>
+        <span id="combo-count" class="muted"></span>
+      </div>
+
+      <div class="progress" aria-hidden="true"><div id="progress-bar"></div></div>
+      <p id="run-status" class="muted" role="status"></p>
+      <ul id="combo-list" class="combo-list"></ul>
+      <details>
+        <summary>Live log</summary>
+        <pre id="log"></pre>
+      </details>
+    </section>
+
+    <section class="card" id="results-card">
+      <div class="card-head">
+        <h2>Results</h2>
+        <div class="segmented" role="radiogroup" aria-label="Results source">
+          <label><input type="radio" name="results-mode" value="live" checked> Live</label>
+          <label><input type="radio" name="results-mode" value="dry_run"> Dry run</label>
+        </div>
+      </div>
+      <p id="results-meta" class="muted"></p>
+
+      <h3>Score matrix <span class="muted">(0–3 per pillar, POI max 15)</span></h3>
+      <div id="matrix"></div>
+
+      <div class="grid-2">
+        <div>
+          <h3>Operability tax <span class="muted">(custom LOC, lower is better)</span></h3>
+          <div id="ot"></div>
+        </div>
+        <div>
+          <h3>Ranking <span class="muted">(POI ↓, tiebreak OT ↑)</span></h3>
+          <ol id="ranking" class="ranking"></ol>
+        </div>
+      </div>
+
+      <h3>Ranking stability <span class="muted" id="sens-meta"></span></h3>
+      <div id="sensitivity"></div>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  <script src="results.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

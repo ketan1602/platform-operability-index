@@ -32,4 +32,4 @@ env/
 htmlcov/
 
 # Results (large YAML dumps — track only schema, not run data)
-results/runs/*.yaml
+results/runs/**/*.yaml

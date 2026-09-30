@@ -14,7 +14,15 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+import structlog
+
 _SCRIPT_DIR = Path(__file__).parent
+# Allows `python analysis/poi_report.py` as well as `-m analysis.poi_report`.
+sys.path.insert(0, str(_SCRIPT_DIR.parent))
+
+from analysis.sensitivity import compute_sensitivity  # noqa: E402
+
+log = structlog.get_logger(__name__)
 _DEFAULT_RESULTS = _SCRIPT_DIR.parent / "results" / "runs"
 _PILLARS = ["p1", "p2", "p3", "p4", "p5"]
 _SKIP = {"summary.yaml"}
@@ -28,7 +36,6 @@ _FW_NAMES = {
 
 
 def _load(results_dir: Path) -> list:
-    sys.path.insert(0, str(_SCRIPT_DIR.parent))
     from harness.shared.measurement import RunResult
     records = []
     for f in sorted(results_dir.glob("**/*.yaml")):
@@ -36,8 +43,8 @@ def _load(results_dir: Path) -> list:
             continue
         try:
             records.append(RunResult.from_yaml(f.read_text()))
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("result_parse_failed", file=f.name, error=str(exc))
     return records
 
 
@@ -97,48 +104,42 @@ def _print_ot_table(ot: dict, matrix: dict) -> None:
         print(f"{name:<18} {loc:>8} {poi:>5}")
 
 
+def _rank(matrix: dict, ot: dict) -> list[str]:
+    return sorted(matrix, key=lambda f: (-matrix[f]["poi_total"], ot.get(f, 9999)))
+
+
 def _print_ranking(matrix: dict, ot: dict) -> None:
     print("\n=== Ranking (primary: POI ↑, tiebreak: OT-LOC ↓) ===")
-    ranked = sorted(
-        matrix.items(),
-        key=lambda x: (-x[1]["poi_total"], ot.get(x[0], 9999)),
-    )
-    for rank, (fid, scores) in enumerate(ranked, 1):
+    for rank, fid in enumerate(_rank(matrix, ot), 1):
         name = _FW_NAMES.get(fid, fid)
-        loc  = ot.get(fid, 0)
-        print(f"  #{rank}  {name:<18}  POI={scores['poi_total']}  OT={loc} LOC")
+        print(f"  #{rank}  {name:<18}  POI={matrix[fid]['poi_total']}  OT={ot.get(fid, 0)} LOC")
 
 
-def _sensitivity_analysis(matrix: dict, n: int = 1000) -> None:
-    """Rank stability under n Dirichlet(alpha=1) random weight vectors."""
-    import random
-    fids = sorted(matrix.keys())
-    vecs = {fid: [matrix[fid].get(p, 0) for p in _PILLARS] for fid in fids}
-    eq_order = sorted(fids, key=lambda f: (-matrix[f]["poi_total"], f))
-    adjacents = [(eq_order[i], eq_order[i + 1]) for i in range(len(eq_order) - 1)]
-    pair_wins = {pair: 0 for pair in adjacents}
-    rank_hold = 0
-
-    for _ in range(n):
-        raw = [random.gammavariate(1, 1) for _ in _PILLARS]
-        total = sum(raw)
-        w = [r / total for r in raw]
-        ws = {fid: sum(wi * si for wi, si in zip(w, vecs[fid])) for fid in fids}
-        ranked = sorted(fids, key=lambda f: (-ws[f], f))
-        if ranked == eq_order:
-            rank_hold += 1
-        for a, b in adjacents:
-            if ws[a] > ws[b]:
-                pair_wins[(a, b)] += 1
-
-    print(f"\n=== Sensitivity Analysis ({n} Dirichlet weight samples) ===")
+def _print_sensitivity(sens: dict) -> None:
+    print(f"\n=== Sensitivity Analysis ({sens['samples']} Dirichlet weight samples) ===")
     print("Pairwise rank stability (% of weight vectors where equal-weight order holds):")
-    for (a, b), wins in pair_wins.items():
-        pct = round(wins / n * 100)
-        tag = "stable" if pct >= 80 else ("contested" if pct >= 60 else "fragile")
-        na, nb = _FW_NAMES.get(a, a), _FW_NAMES.get(b, b)
-        print(f"  {na:>18} > {nb:<18}  {pct:>3}%  [{tag}]")
-    print(f"Full ranking unchanged: {round(rank_hold / n * 100)}% of draws")
+    for row in sens["pairs"]:
+        na, nb = _FW_NAMES.get(row["a"], row["a"]), _FW_NAMES.get(row["b"], row["b"])
+        print(f"  {na:>18} > {nb:<18}  {row['pct']:>3}%  [{row['tag']}]")
+    print(f"Full ranking unchanged: {sens['full_rank_hold_pct']}% of draws")
+
+
+def build_report(results_dir: Path, samples: int = 1000) -> dict:
+    """Structured report for API consumers; empty sections when no results exist."""
+    records = _load(results_dir)
+    if not records:
+        return {"run_count": 0, "names": _FW_NAMES, "matrix": {}, "ot": {},
+                "ranking": [], "sensitivity": None}
+    matrix = _score_matrix(records)
+    ot = _ot_table(records)
+    return {
+        "run_count": len(records),
+        "names": _FW_NAMES,
+        "matrix": matrix,
+        "ot": ot,
+        "ranking": _rank(matrix, ot),
+        "sensitivity": compute_sensitivity(matrix, n=samples),
+    }
 
 
 def main() -> None:
@@ -160,7 +161,7 @@ def main() -> None:
     _print_ot_table(ot, matrix)
     _print_ranking(matrix, ot)
     if not args.no_sensitivity:
-        _sensitivity_analysis(matrix)
+        _print_sensitivity(compute_sensitivity(matrix))
     print()
 
 
