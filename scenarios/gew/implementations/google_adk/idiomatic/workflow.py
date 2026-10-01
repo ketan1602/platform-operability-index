@@ -1,9 +1,9 @@
-"""GEW idiomatic — Google ADK single autonomous LlmAgent.
+"""GEW idiomatic — Google ADK single autonomous LlmAgent with MCPToolsets.
 
 Idiomatic difference from fixed (SequentialAgent with scoped sub-agents):
   - One root LlmAgent has all tools; it decides tool-call order autonomously.
-  - Demonstrates ADK's "autonomous tool orchestration" pattern — the LLM
-    plans and executes the workflow without external sequential wiring.
+  - Tools are sourced from MCP servers (ADK's native MCPToolset integration).
+  - Demonstrates ADK's "autonomous tool orchestration + MCP" pattern.
 
 DRY_RUN: returns hardcoded result immediately.
 """
@@ -30,35 +30,54 @@ def _hardcoded(workflow_id: str) -> dict:
     }
 
 
+def _get_mcp_urls() -> tuple[str, str, str]:
+    missing = [v for v in ("MOCK_API_MCP_URL", "MOCK_CRM_MCP_URL", "MOCK_APPROVAL_MCP_URL")
+               if not os.environ.get(v)]
+    if missing:
+        raise RuntimeError(f"Missing required env vars: {', '.join(missing)}")
+    return (
+        os.environ["MOCK_API_MCP_URL"],
+        os.environ["MOCK_CRM_MCP_URL"],
+        os.environ["MOCK_APPROVAL_MCP_URL"],
+    )
+
+
 def _run_live(workflow_id: str) -> dict:
     from google.adk.agents import LlmAgent
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
-    from scenarios.gew.implementations.google_adk.fixed.tools import (
-        fetch_system_a, fetch_system_b, score_risk, request_hitl_approval,
-        auto_approve_all, check_approval_status, write_to_crm,
-    )
-    from litellm import completion as _unused  # ensure litellm importable
+    from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StreamableHTTPConnectionParams
+    from litellm import completion as _unused  # ensure litellm importable for ADK
 
     base_url = os.environ.get("AIREFINERY_BASE_URL", "")
     model_id = os.environ.get("AIREFINERY_MODEL", "openai/gpt-4o-mini")
     if base_url:
         os.environ.setdefault("LITELLM_BASE_URL", base_url)
 
+    api_url, crm_url, approval_url = _get_mcp_urls()
+
+    mock_api_toolset = MCPToolset(
+        connection_params=StreamableHTTPConnectionParams(url=api_url)
+    )
+    mock_crm_toolset = MCPToolset(
+        connection_params=StreamableHTTPConnectionParams(url=crm_url)
+    )
+    approval_toolset = MCPToolset(
+        connection_params=StreamableHTTPConnectionParams(url=approval_url)
+    )
+
     root = LlmAgent(
         name="GEWAutonomousAgent",
         model=f"litellm/{model_id}",
         instruction=(
             f"Execute the Generic Enterprise Workflow for workflow_id={workflow_id}. "
-            "Steps in order: 1) Fetch data from system_a and system_b. "
-            "2) Score risk. 3) Request HITL approval and auto-approve. "
-            "4) Write to CRM with idempotency key. 5) Assemble audit record."
+            "Steps in order: 1) Fetch data from system_a and system_b via get_external_data. "
+            "2) Score risk via score_risk. 3) Request HITL approval via request_approval, "
+            "then auto_approve_all, then confirm via get_approval_status. "
+            "4) Write to CRM via crm_update with an idempotency key. "
+            "5) Assemble the audit record from all results."
         ),
-        tools=[
-            fetch_system_a, fetch_system_b, score_risk,
-            request_hitl_approval, auto_approve_all, check_approval_status,
-            write_to_crm,
-        ],
+        tools=[mock_api_toolset, mock_crm_toolset, approval_toolset],
     )
 
     session_svc = InMemorySessionService()
@@ -82,7 +101,7 @@ def _run_live(workflow_id: str) -> dict:
 
 
 def run_workflow(workflow_id: str | None = None) -> dict:
-    """Run GEW via a single autonomous LlmAgent with all tools."""
+    """Run GEW via a single autonomous LlmAgent backed by MCPToolsets."""
     if workflow_id is None:
         workflow_id = str(uuid.uuid4())
     if _DRY_RUN:

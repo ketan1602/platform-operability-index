@@ -122,5 +122,15 @@ def get_approval_status(request_id: str) -> dict:
     return {"request_id": request_id, "status": record["status"]}
 
 
+@mcp_app.tool()
+def auto_approve_all() -> dict:
+    """Approve all pending HITL requests (automated-test utility). Returns list of approved request_ids."""
+    approved = [rid for rid, rec in _requests.items() if rec["status"] == "pending"]
+    for rid in approved:
+        _requests[rid]["status"] = "approved"
+    log.info("mcp_auto_approved", count=len(approved))
+    return {"approved": approved, "count": len(approved)}
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8003)

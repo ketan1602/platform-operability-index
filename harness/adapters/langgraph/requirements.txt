@@ -2,3 +2,4 @@
 langgraph>=0.6
 langgraph-checkpoint-postgres>=2.0
 langchain-openai>=0.3
+langchain-mcp-adapters>=0.1
