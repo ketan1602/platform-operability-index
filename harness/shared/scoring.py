@@ -13,6 +13,9 @@ from harness.shared.pillar_models import (
     P3Measurements,
     P4Measurements,
     P5Measurements,
+    P6Measurements,
+    P7Measurements,
+    P8Measurements,
 )
 
 
@@ -104,6 +107,21 @@ def score_p4(m: P4Measurements) -> int:
         return 3
 
     return 2
+
+
+def score_p6(m: P6Measurements) -> int:
+    """P6 — Portability (12-Factor + SOLID compliance, behavioural)."""
+    return scoring_v2.p6_from_portability(m)
+
+
+def score_p7(m: P7Measurements) -> int:
+    """P7 — Developer Experience (timed + error clarity)."""
+    return scoring_v2.p7_from_dx(m)
+
+
+def score_p8(m: P8Measurements) -> int:
+    """P8 — Security Posture (behavioural sub-tests)."""
+    return scoring_v2.p8_from_security(m)
 
 
 def score_p5(m: P5Measurements) -> int:

@@ -1,12 +1,14 @@
 """Shared adapter behaviour: route a run to its measurements, score, and assemble the result.
 
-Baseline scenarios (GEW, TCW) call the subclass's `_run_p1`…`_run_p5`. Measured
-scenarios (RLC, SMA, AHQ) run the framework-agnostic trials in harness.scenarios,
-which only measure the pillars they stress; P4/P5 come from the subclass as usual.
+Baseline scenarios (GEW, TCW) in DRY_RUN call the subclass's `_run_p1`…`_run_p5`.
+In live mode, GEW and TCW also run their measured harnesses (SIGKILL+resume for P1;
+fault injection + Jaeger for P2/P3). Legacy measured scenarios (RLC, SMA, AHQ) always
+use the framework-agnostic trial; P4/P5 come from the subclass as usual.
 """
 from __future__ import annotations
 import importlib
 import importlib.metadata
+import os
 
 import structlog
 
@@ -20,7 +22,15 @@ _SCORERS = {"p1": score_p1, "p2": score_p2, "p3": score_p3, "p4": score_p4, "p5"
 _LOC_FIELDS = ("custom_code_lines_to_reach_score_3", "custom_code_lines_for_isolation",
                "custom_exporter_loc", "template_loc")
 # Measured scenario -> the pillars it produces evidence for.
-MEASURED = {"RLC": ("p2",), "SMA": ("p2", "p3"), "AHQ": ("p1",)}
+# GEW and TCW baselines run via the subclass _run_* methods in DRY_RUN; in live mode
+# the harness.scenarios.{gew,tcw} modules provide richer measured evidence.
+MEASURED = {
+    "RLC": ("p2",),
+    "SMA": ("p2", "p3"),
+    "AHQ": ("p1",),
+    "GEW": ("p1",),
+    "TCW": ("p2", "p3"),
+}
 _STATIC = ("p4", "p5")  # framework properties, identical in every scenario
 
 
@@ -57,7 +67,10 @@ class BaseAdapter:
     def _measure(self, scenario: str, impl_type: str, wanted: tuple) -> tuple[dict, str]:
         out: dict = {}
         notes = ""
-        if scenario in MEASURED:
+        dry_run = os.environ.get("DRY_RUN") == "true"
+        # GEW/TCW measured harnesses require live infra; skip in DRY_RUN so baselines work.
+        use_measured = scenario in MEASURED and not dry_run
+        if use_measured:
             module = importlib.import_module(f"harness.scenarios.{scenario.lower()}")
             evidence = module.measure(self.framework_id)
             notes = evidence.pop("notes", "")

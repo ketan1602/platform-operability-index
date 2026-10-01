@@ -66,6 +66,11 @@ MOCK_CRM_URL=http://127.0.0.1:8002
 APPROVAL_URL=http://127.0.0.1:8003
 ML_ENDPOINT_URL=http://127.0.0.1:8102
 CHANNEL_ADAPTER_URL=http://127.0.0.1:8103
+MOCK_API_MCP_URL=http://127.0.0.1:9001/mcp
+MOCK_CRM_MCP_URL=http://127.0.0.1:9002/mcp
+MOCK_APPROVAL_MCP_URL=http://127.0.0.1:9003/mcp
+MOCK_ML_MCP_URL=http://127.0.0.1:9102/mcp
+MOCK_CHANNEL_MCP_URL=http://127.0.0.1:9103/mcp
 EOF
 }
 
@@ -99,8 +104,16 @@ up() {
   bg mock-approval python3 -m uvicorn scenarios.gew.mock_infrastructure.approval_server:app --port 8003
   bg mock-ml       python3 -m uvicorn scenarios.tcw.mock_infrastructure.ml_endpoint:app --port 8102
   bg mock-channel  python3 -m uvicorn scenarios.tcw.mock_infrastructure.channel_adapter:app --port 8103
+  bg mock-api-mcp      python3 -c "from scenarios.gew.mock_infrastructure.mock_api_server import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9001)"
+  bg mock-crm-mcp      python3 -c "from scenarios.gew.mock_infrastructure.mock_crm_server import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9002)"
+  bg mock-approval-mcp python3 -c "from scenarios.gew.mock_infrastructure.approval_server import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9003)"
+  bg mock-ml-mcp       python3 -c "from scenarios.tcw.mock_infrastructure.ml_endpoint import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9102)"
+  bg mock-channel-mcp  python3 -c "from scenarios.tcw.mock_infrastructure.channel_adapter import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9103)"
   wait_port "$PG_PORT" pf-postgres; wait_port "$NEO4J_PORT" pf-neo4j; wait_port "$AMQP_PORT" pf-rabbitmq
-  wait_port "$OTLP_PORT" pf-otlp; wait_port "$JAEGER_UI_PORT" pf-jaeger; for p in 8001 8002 8003 8102 8103; do wait_port "$p" "mock-$p"; done
+  wait_port "$OTLP_PORT" pf-otlp; wait_port "$JAEGER_UI_PORT" pf-jaeger
+  for p in 8001 8002 8003 8102 8103; do wait_port "$p" "mock-$p"; done
+  wait_port 9001 mock-api-mcp; wait_port 9002 mock-crm-mcp; wait_port 9003 mock-approval-mcp
+  wait_port 9102 mock-ml-mcp; wait_port 9103 mock-channel-mcp
   ensure_database
   write_env
   seed_graph

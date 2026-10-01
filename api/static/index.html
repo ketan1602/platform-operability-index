@@ -83,7 +83,7 @@
       </div>
       <p id="results-meta" class="muted"></p>
 
-      <h3>Score matrix <span class="muted">(0–3 per pillar, POI max 15 · median of repeats, worst scenario)</span></h3>
+      <h3>Score matrix <span class="muted">(0–3 per pillar, POI max 24 · median of repeats, worst scenario)</span></h3>
       <div id="matrix"></div>
 
       <div class="grid-2">
@@ -99,6 +99,17 @@
 
       <h3>Evidence <span class="muted">(median [min–max] · n repeats · inconclusive)</span></h3>
       <div id="evidence"></div>
+
+      <div class="grid-2">
+        <div>
+          <h3>FinOps — token overhead <span class="muted">(input tokens per run, lower is better)</span></h3>
+          <div id="finops"></div>
+        </div>
+        <div>
+          <h3>Runtime performance <span class="muted">(median inter-tool latency ms)</span></h3>
+          <div id="perf"></div>
+        </div>
+      </div>
 
       <h3>Ranking stability <span class="muted" id="sens-meta"></span></h3>
       <div id="sensitivity"></div>

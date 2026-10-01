@@ -51,26 +51,39 @@ _DISPATCH_FIXTURE = {"receipt_id": "dry-dispatch-001", "channel": "email", "stat
 def query_customer_graph(customer_id: str) -> dict:
     """Step 1 — fetch the customer 360 view from Neo4j."""
     if _dry():
-        return {**_GRAPH_FIXTURE, "customer_id": customer_id}
-    from scenarios.tcw.seed_neo4j import driver
-    with driver() as d:
-        records = d.execute_query(_GRAPH_QUERY, customer_id=customer_id).records
-    if not records:
-        raise LookupError(f"customer {customer_id} not in graph — run python -m scenarios.tcw.seed_neo4j")
-    return {**dict(records[0]["c"]), "products": records[0]["products"]}
+        result = {**_GRAPH_FIXTURE, "customer_id": customer_id}
+    else:
+        from scenarios.tcw.seed_neo4j import driver
+        with driver() as d:
+            records = d.execute_query(_GRAPH_QUERY, customer_id=customer_id).records
+        if not records:
+            raise LookupError(f"customer {customer_id} not in graph — run python -m scenarios.tcw.seed_neo4j")
+        result = {**dict(records[0]["c"]), "products": records[0]["products"]}
+    if os.environ.get("POI_LEDGER"):
+        from harness.shared import ledger
+        ledger.record("tcw_graph_queried", customer_id=customer_id)
+    return result
 
 
 def score_propensity(customer_id: str, graph_data: dict) -> list:
     """Step 2 — run ML propensity model; returns ranked product recommendations."""
     if _dry():
-        return _RECS_FIXTURE
-    r = requests.post(
-        f"{_url('ML_ENDPOINT_URL')}/propensity/score",
-        json={"customer_id": customer_id, "features": graph_data},
-        timeout=_TIMEOUT,
-    )
-    r.raise_for_status()
-    return r.json()["recommendations"]
+        recs = _RECS_FIXTURE
+    elif os.environ.get("POI_TCW_FAULT") == "1":
+        raise RuntimeError("ml endpoint: model unavailable")
+    else:
+        r = requests.post(
+            f"{_url('ML_ENDPOINT_URL')}/propensity/score",
+            json={"customer_id": customer_id, "features": graph_data},
+            timeout=_TIMEOUT,
+        )
+        r.raise_for_status()
+        recs = r.json()["recommendations"]
+    if os.environ.get("POI_LEDGER"):
+        from harness.shared import ledger
+        top_score = recs[0]["score"] if recs else None
+        ledger.record("tcw_ml_scored", customer_id=customer_id, score=top_score)
+    return recs
 
 
 def check_eligibility(customer_id: str, recommendations: list) -> list:
@@ -89,11 +102,17 @@ def check_eligibility(customer_id: str, recommendations: list) -> list:
 def dispatch_channel(customer_id: str, offer: str, workflow_id: str) -> dict:
     """Step 5 — dispatch personalised offer to best channel; returns receipt."""
     if _dry():
-        return {**_DISPATCH_FIXTURE, "workflow_id": workflow_id}
-    r = requests.post(
-        f"{_url('CHANNEL_ADAPTER_URL')}/channel/dispatch",
-        json={"customer_id": customer_id, "offer": offer, "workflow_id": workflow_id},
-        timeout=_TIMEOUT,
-    )
-    r.raise_for_status()
-    return r.json()
+        result = {**_DISPATCH_FIXTURE, "workflow_id": workflow_id}
+    else:
+        r = requests.post(
+            f"{_url('CHANNEL_ADAPTER_URL')}/channel/dispatch",
+            json={"customer_id": customer_id, "offer": offer, "workflow_id": workflow_id},
+            timeout=_TIMEOUT,
+        )
+        r.raise_for_status()
+        result = r.json()
+    if os.environ.get("POI_LEDGER"):
+        from harness.shared import ledger
+        ledger.record("tcw_channel_dispatched", customer_id=customer_id,
+                      channel=result.get("channel"))
+    return result

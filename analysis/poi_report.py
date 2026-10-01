@@ -24,7 +24,7 @@ from analysis.sensitivity import compute_sensitivity  # noqa: E402
 
 log = structlog.get_logger(__name__)
 _DEFAULT_RESULTS = _SCRIPT_DIR.parent / "results" / "runs"
-_PILLARS = ["p1", "p2", "p3", "p4", "p5"]
+_PILLARS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]
 _SKIP = {"summary.yaml"}
 _FW_NAMES = {
     "F1": "LangGraph",
@@ -57,9 +57,9 @@ def _ot_table(agg: dict) -> dict[str, int]:
 
 
 def _print_score_matrix(matrix: dict) -> None:
-    header = f"{'Framework':<18} {'P1':>4} {'P2':>4} {'P3':>4} {'P4':>4} {'P5':>4} {'POI':>5}"
+    header = f"{'Framework':<18} {'P1':>4} {'P2':>4} {'P3':>4} {'P4':>4} {'P5':>4} {'P6':>4} {'P7':>4} {'P8':>4} {'POI':>5}"
     sep    = "-" * len(header)
-    print("\n=== POI Score Matrix (0–3 per pillar, max 15) ===")
+    print("\n=== POI Score Matrix (0–3 per pillar, max 24) ===")
     print(header)
     print(sep)
     for fid, scores in matrix.items():
@@ -108,7 +108,8 @@ def build_report(results_dir: Path, samples: int = 1000) -> dict:
     records = _load(results_dir)
     if not records:
         return {"run_count": 0, "names": _FW_NAMES, "matrix": {}, "ot": {},
-                "ranking": [], "sensitivity": None, "evidence": {}, "source": {}}
+                "ranking": [], "sensitivity": None, "evidence": {}, "source": {},
+                "finops": {}, "perf": {}}
     agg = aggregate(records)
     matrix, ot = _score_matrix(agg), _ot_table(agg)
     return {
@@ -121,6 +122,8 @@ def build_report(results_dir: Path, samples: int = 1000) -> dict:
         "ot": ot,
         "ranking": _rank(matrix, ot),
         "sensitivity": compute_sensitivity(matrix, n=samples),
+        "finops": {fid: e.get("finops", {}) for fid, e in agg.items()},
+        "perf": {fid: e.get("perf", {}) for fid, e in agg.items()},
     }
 
 

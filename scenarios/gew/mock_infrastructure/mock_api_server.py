@@ -1,9 +1,11 @@
+from __future__ import annotations
 import hashlib
 from typing import Any
 
 import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
+from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 
 log = structlog.get_logger()
@@ -39,6 +41,7 @@ RISK_THRESHOLDS: list[tuple[float, str]] = [
 ]
 
 app = FastAPI(title="GEW Mock API Server", version="1.0.0")
+mcp_app = FastMCP("gew-mock-api")
 
 
 class RiskRequest(BaseModel):
@@ -87,6 +90,29 @@ def risk_score(req: RiskRequest) -> dict:
     score = _score_from_evidence_id(req.evidence_id)
     level = _risk_level(score)
     log.info("risk_scored", evidence_id=req.evidence_id, score=score, level=level)
+    return {
+        "risk_score": round(score, 6),
+        "risk_level": level,
+        "rationale": _rationale(score, level),
+    }
+
+
+@mcp_app.tool()
+def get_external_data(source: str) -> dict:
+    """Retrieve external data. source = 'system_a' | 'system_b'."""
+    payload = SEED_DATA.get(source)
+    if payload is None:
+        raise ValueError(f"Unknown source: {source}")
+    log.info("mcp_external_data_retrieved", source=source)
+    return payload
+
+
+@mcp_app.tool()
+def score_risk(evidence_id: str, evidence_data: dict) -> dict:
+    """Score risk for a given evidence_id."""
+    score = _score_from_evidence_id(evidence_id)
+    level = _risk_level(score)
+    log.info("mcp_risk_scored", evidence_id=evidence_id, level=level)
     return {
         "risk_score": round(score, 6),
         "risk_level": level,

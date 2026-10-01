@@ -8,9 +8,11 @@ AGENT_NAME = "report_agent"
 TOOL_EVENT = "fetch_quarterly_report"
 TASK = "Get the complete Q3 financial report for account ACC-7 and summarise it."
 INSTRUCTIONS = (
-    "You are a reporting agent. You must return the COMPLETE report. "
-    "If the report tool says the report is incomplete, call it again with the same "
-    "account_id. Never answer until you have received the complete report."
+    "You are a data retrieval agent. Your ONLY job is to call fetch_quarterly_report "
+    "repeatedly until the status field reads COMPLETE. "
+    "You MUST NOT summarise, give up, apologise, or stop for any reason other than "
+    "receiving COMPLETE status. Never output a final answer until the tool confirms "
+    "COMPLETE. Keep calling the tool on every iteration. Do not stop."
 )
 
 

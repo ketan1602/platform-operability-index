@@ -14,7 +14,6 @@ import os
 import requests
 
 
-
 def _url(var: str) -> str:
     value = os.environ.get(var, "")
     if not value:
@@ -51,7 +50,11 @@ def update_crm(idempotency_key: str, customer_id: str, action: str, data: dict) 
         timeout=_TIMEOUT,
     )
     r.raise_for_status()
-    return r.json()
+    result = r.json()
+    if os.environ.get("POI_LEDGER"):
+        from harness.shared import ledger
+        ledger.record("gew_crm_updated", idempotency_key=idempotency_key, action=action)
+    return result
 
 
 def request_approval(workflow_id: str, step: str, data: dict) -> str:
@@ -62,7 +65,11 @@ def request_approval(workflow_id: str, step: str, data: dict) -> str:
         timeout=_TIMEOUT,
     )
     r.raise_for_status()
-    return r.json()["request_id"]
+    request_id = r.json()["request_id"]
+    if os.environ.get("POI_LEDGER"):
+        from harness.shared import ledger
+        ledger.record("gew_approval_requested", workflow_id=workflow_id, step=step)
+    return request_id
 
 
 def get_approval_status(request_id: str) -> str:

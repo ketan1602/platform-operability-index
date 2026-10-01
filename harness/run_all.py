@@ -1,7 +1,9 @@
 """Run POI benchmark combinations, each in its framework's own venv, and write YAML results.
 
-Baseline scenarios (GEW, TCW) run fixed + idiomatic once each. Measured scenarios
-(RLC, SMA, AHQ) are idiomatic-only, need live frameworks and ./infra.sh up, and are
+Baseline scenarios (GEW, TCW) run fixed + idiomatic once each in DRY_RUN; in live mode
+they also run the measured harnesses (SIGKILL+resume for GEW/P1, fault injection +
+Jaeger for TCW/P2P3) repeated POI_REPEATS times. Pure measured scenarios (RLC, SMA,
+AHQ, PORT, DX) are idiomatic-only, need live frameworks and ./infra.sh up, and are
 repeated POI_REPEATS times (default 5) so scores are medians, not single draws.
 
 Usage:
@@ -27,7 +29,7 @@ _ROOT = Path(__file__).parent.parent
 _ADAPTER_DIRS = {"F1": "langgraph", "F2": "ms_agent", "F3": "openai_sdk", "F4": "google_adk", "F5": "strands"}
 _FW_NAMES = {"F1": "LangGraph", "F2": "AutoGen", "F3": "OpenAI SDK", "F4": "Google ADK", "F5": "Strands"}
 _BASELINE = ("GEW", "TCW")
-_MEASURED = ("RLC", "SMA", "AHQ")
+_MEASURED = ("RLC", "SMA", "AHQ", "GEW", "TCW", "PORT", "DX", "SEC")
 _IMPLS = ("fixed", "idiomatic")
 
 
@@ -36,11 +38,19 @@ def _combos(args: argparse.Namespace, dry_run: bool) -> list[tuple[str, str, str
     out = []
     for fw in args.frameworks:
         for sc in args.scenarios:
-            if sc in _MEASURED and dry_run:
-                continue  # measured scenarios have no canned mode — they exist to observe real behaviour
-            impls = ("idiomatic",) if sc in _MEASURED else tuple(i for i in args.impls)
-            reps = repeats if sc in _MEASURED else 1
-            out += [(fw, sc, impl, r) for impl in impls for r in range(reps)]
+            is_baseline = sc in _BASELINE
+            is_pure_measured = sc in _MEASURED and not is_baseline
+            if is_pure_measured and dry_run:
+                continue  # pure-measured scenarios require live infra
+            if is_baseline and dry_run:
+                # DRY_RUN: run fixed + idiomatic once (no SIGKILL/fault trials)
+                out += [(fw, sc, impl, 0) for impl in args.impls]
+            elif is_baseline:
+                # LIVE: idiomatic only, repeated — adapter triggers measured harness internally
+                out += [(fw, sc, "idiomatic", r) for r in range(repeats)]
+            else:
+                # Pure-measured: idiomatic only, repeated
+                out += [(fw, sc, "idiomatic", r) for r in range(repeats)]
     return out
 
 
@@ -70,7 +80,8 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run POI combinations")
     p.add_argument("--results-dir", type=Path, default=_ROOT / "results" / "runs")
     p.add_argument("--frameworks", nargs="+", choices=list(_ADAPTER_DIRS), default=list(_ADAPTER_DIRS))
-    p.add_argument("--scenarios", nargs="+", choices=_BASELINE + _MEASURED, default=list(_BASELINE + _MEASURED))
+    _all_sc = list(dict.fromkeys(_BASELINE + _MEASURED))  # deduplicated, order-preserving
+    p.add_argument("--scenarios", nargs="+", choices=_all_sc, default=_all_sc)
     p.add_argument("--impls", nargs="+", choices=_IMPLS, default=list(_IMPLS))
     p.add_argument("--repeats", type=int, default=int(os.environ.get("POI_REPEATS", "5")))
     p.add_argument("--parallel", type=int, default=int(os.environ.get("POI_PARALLEL", "5")))

@@ -1,8 +1,9 @@
 // Results rendering: score matrix, OT-LOC bars, ranking, sensitivity.
-const PILLARS = ["p1", "p2", "p3", "p4", "p5"];
+const PILLARS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"];
 const PILLAR_LABELS = {
   p1: "P1 Durable execution", p2: "P2 Blast radius", p3: "P3 Observability",
   p4: "P4 Packageability", p5: "P5 Migration fragility",
+  p6: "P6 Portability", p7: "P7 Developer experience", p8: "P8 Security posture",
 };
 const TAG_STATUS = { stable: "success", contested: "warning", fragile: "error" };
 const TAG_ICON = { stable: "●", contested: "▲", fragile: "■" };
@@ -73,11 +74,12 @@ function evidenceText(cell) {
 }
 
 function renderEvidence(r) {
+  const evidencePillars = ["p1", "p2", "p3", "p6", "p7", "p8"];
   const head = el("tr", {}, [el("th", { text: "Framework" }),
-    ...["p1", "p2", "p3"].map((p) => el("th", { text: PILLAR_LABELS[p] }))]);
+    ...evidencePillars.map((p) => el("th", { text: PILLAR_LABELS[p] }))]);
   const rows = r.ranking.map((fid) => el("tr", {}, [
     el("th", { scope: "row", text: `${r.names[fid]}${r.source[fid] === "baseline" ? " (baseline)" : ""}` }),
-    ...["p1", "p2", "p3"].map((p) => el("td", { class: "evidence" },
+    ...evidencePillars.map((p) => el("td", { class: "evidence" },
       Object.entries(r.evidence[fid][p] || {}).map(([sc, cell]) =>
         el("div", { text: `${sc}: ${evidenceText(cell)}` })))),
   ]));
@@ -99,6 +101,41 @@ function renderSensitivity(r) {
   return el("div", { class: "bars" }, rows);
 }
 
+function renderFinOps(r) {
+  const vals = Object.fromEntries(r.ranking.map((fid) => [fid, r.finops[fid]?.total_input_tokens ?? 0]));
+  const max = Math.max(...Object.values(vals), 1);
+  const order = [...r.ranking].sort((a, b) => vals[a] - vals[b]);
+  const rows = order.map((fid) => el("div", { class: "bar-row" }, [
+    el("span", { class: "bar-label", text: r.names[fid] }),
+    el("div", { class: "bar-track" }, el("div", {
+      class: "bar-fill", style: `width:${(vals[fid] / max) * 100}%`,
+      tip: `${r.names[fid]}: ${vals[fid].toLocaleString()} input tokens · est $${r.finops[fid]?.estimated_run_cost_usd ?? "–"}`,
+    })),
+    el("span", { class: "bar-value", text: vals[fid] > 0 ? `${(vals[fid] / 1000).toFixed(0)}k` : "–" }),
+  ]));
+  return el("div", { class: "bars" }, rows);
+}
+
+function renderPerf(r) {
+  const vals = Object.fromEntries(r.ranking.map((fid) => [fid, r.perf[fid]?.inter_tool_latency_ms ?? null]));
+  const avail = Object.values(vals).filter((v) => v !== null);
+  const max = Math.max(...avail, 1);
+  const order = [...r.ranking].sort((a, b) => (vals[a] ?? Infinity) - (vals[b] ?? Infinity));
+  const rows = order.map((fid) => {
+    const v = vals[fid];
+    const mem = r.perf[fid]?.peak_memory_rss_mb;
+    return el("div", { class: "bar-row" }, [
+      el("span", { class: "bar-label", text: r.names[fid] }),
+      el("div", { class: "bar-track" }, el("div", {
+        class: "bar-fill", style: `width:${v !== null ? (v / max) * 100 : 0}%`,
+        tip: `${r.names[fid]}: ${v ?? "–"} ms inter-tool · ${mem ?? "–"} MB peak RSS`,
+      })),
+      el("span", { class: "bar-value", text: v !== null ? `${v}ms` : "–" }),
+    ]);
+  });
+  return el("div", { class: "bars" }, rows);
+}
+
 async function loadResults() {
   const mode = document.querySelector("input[name=results-mode]:checked").value;
   const res = await fetch(`/api/v1/results?mode=${mode}`);
@@ -117,6 +154,8 @@ async function loadResults() {
   document.getElementById("ot").append(renderOT(r));
   document.getElementById("ranking").append(...renderRanking(r));
   document.getElementById("evidence").append(renderEvidence(r));
+  if (r.finops) document.getElementById("finops").append(renderFinOps(r));
+  if (r.perf) document.getElementById("perf").append(renderPerf(r));
   document.getElementById("sensitivity").append(renderSensitivity(r));
   document.getElementById("sens-meta").textContent = `(${r.sensitivity.samples} Dirichlet weight samples)`;
   bindTooltips(document.getElementById("results-card"));

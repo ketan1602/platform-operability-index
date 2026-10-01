@@ -1,3 +1,4 @@
+from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -5,6 +6,7 @@ from typing import Any
 import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 
 log = structlog.get_logger()
@@ -12,6 +14,7 @@ log = structlog.get_logger()
 _receipts: dict[str, dict] = {}
 
 app = FastAPI(title="GEW Mock CRM Server", version="1.0.0")
+mcp_app = FastMCP("gew-mock-crm")
 
 
 class CrmUpdateRequest(BaseModel):
@@ -21,14 +24,8 @@ class CrmUpdateRequest(BaseModel):
     data: dict[str, Any]
 
 
-def _new_receipt(
-    idempotency_key: str,
-    customer_id: str,
-    action: str,
-    data: dict,
-) -> dict:
+def _new_receipt(idempotency_key: str, customer_id: str, action: str, data: dict) -> dict:
     receipt_id = f"RCP-{uuid.uuid4().hex[:8].upper()}"
-    now = datetime.now(timezone.utc).isoformat()
     return {
         "receipt_id": receipt_id,
         "idempotency_key": idempotency_key,
@@ -37,8 +34,21 @@ def _new_receipt(
         "data": data,
         "status": "processed",
         "already_processed": False,
-        "timestamp": now,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _upsert(idempotency_key: str, customer_id: str, action: str, data: dict) -> dict:
+    existing = _receipts.get(idempotency_key)
+    if existing is not None:
+        log.warning("crm_duplicate_call", idempotency_key=idempotency_key,
+                    receipt_id=existing["receipt_id"])
+        return {**existing, "status": "already_processed", "already_processed": True}
+    receipt = _new_receipt(idempotency_key, customer_id, action, data)
+    _receipts[idempotency_key] = receipt
+    log.info("crm_updated", idempotency_key=idempotency_key,
+             receipt_id=receipt["receipt_id"], action=action)
+    return receipt
 
 
 @app.get("/health")
@@ -48,27 +58,8 @@ def health() -> dict:
 
 
 @app.post("/crm/update")
-def crm_update(req: CrmUpdateRequest) -> dict:
-    existing = _receipts.get(req.idempotency_key)
-    if existing is not None:
-        log.warning(
-            "crm_duplicate_call",
-            idempotency_key=req.idempotency_key,
-            receipt_id=existing["receipt_id"],
-        )
-        return {**existing, "status": "already_processed", "already_processed": True}
-
-    receipt = _new_receipt(
-        req.idempotency_key, req.customer_id, req.action, req.data
-    )
-    _receipts[req.idempotency_key] = receipt
-    log.info(
-        "crm_updated",
-        idempotency_key=req.idempotency_key,
-        receipt_id=receipt["receipt_id"],
-        action=req.action,
-    )
-    return receipt
+def http_crm_update(req: CrmUpdateRequest) -> dict:
+    return _upsert(req.idempotency_key, req.customer_id, req.action, req.data)
 
 
 @app.get("/crm/receipts/{idempotency_key}")
@@ -85,6 +76,12 @@ def clear_receipts() -> dict:
     _receipts.clear()
     log.info("receipts_cleared", count=count)
     return {"cleared": count}
+
+
+@mcp_app.tool()
+def crm_update(idempotency_key: str, customer_id: str, action: str, data: dict) -> dict:
+    """Idempotent CRM write. Returns receipt with status and receipt_id."""
+    return _upsert(idempotency_key, customer_id, action, data)
 
 
 if __name__ == "__main__":

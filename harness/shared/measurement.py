@@ -30,6 +30,9 @@ class ScenarioId(str, Enum):
     RLC = "RLC"   # ReAct loop containment            -> P2 evidence
     SMA = "SMA"   # supervisor multi-agent             -> P2, P3 evidence
     AHQ = "AHQ"   # async human approval, kill+resume  -> P1 evidence
+    PORT = "PORT" # portability sub-tests              -> P6 evidence
+    DX = "DX"     # developer experience               -> P7 evidence
+    SEC = "SEC"   # security posture                   -> P8 evidence
 
 
 class ImplementationType(str, Enum):
@@ -43,6 +46,9 @@ class Pillar(str, Enum):
     P3 = "p3"
     P4 = "p4"
     P5 = "p5"
+    P6 = "p6"
+    P7 = "p7"
+    P8 = "p8"
     ALL = "all"
 
 
@@ -68,10 +74,13 @@ class PillarScores(BaseModel):
     p3: Optional[int] = None
     p4: Optional[int] = None
     p5: Optional[int] = None
+    p6: Optional[int] = None
+    p7: Optional[int] = None
+    p8: Optional[int] = None
 
     @property
     def poi_total(self) -> int:
-        return sum(s for s in [self.p1, self.p2, self.p3, self.p4, self.p5] if s is not None)
+        return sum(s for s in [self.p1, self.p2, self.p3, self.p4, self.p5, self.p6, self.p7, self.p8] if s is not None)
 
 
 class OperabilityTax(BaseModel):

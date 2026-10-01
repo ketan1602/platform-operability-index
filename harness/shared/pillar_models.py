@@ -82,3 +82,30 @@ class P5Measurements(BaseModel):
     changelog_breaking_changes_per_release_avg: Optional[float] = None
     # Not scored. Set when an actual harness upgrade N→N+1 is performed.
     harness_upgrade_observed_hrs: Optional[float] = None
+
+
+class P6Measurements(BaseModel):
+    """Pillar 6 — Portability (12-Factor + SOLID compliance, behavioural)."""
+    config_portability: Optional[bool] = None       # env-var driven config, no hardcoding
+    process_isolation: Optional[bool] = None        # concurrent instances don't contaminate
+    tool_extensibility: Optional[bool] = None       # add tool at runtime without class change
+    backend_portability: Optional[bool] = None      # swap persistence backend via env var
+    p6_score: Optional[int] = None                 # 0-3 from sub-tests
+
+
+class P7Measurements(BaseModel):
+    """Pillar 7 — Developer Experience (timed + error clarity)."""
+    time_to_first_run_s: Optional[float] = None    # wall-clock seconds
+    ttr_score: Optional[int] = None                # 0-3 from TTR
+    error_clarity_a: Optional[int] = None          # wrong return type error
+    error_clarity_b: Optional[int] = None          # missing arg error
+    error_clarity_c: Optional[int] = None          # bad LLM init error
+    p7_score: Optional[int] = None                 # 0-3 weighted
+
+
+class P8Measurements(BaseModel):
+    """Pillar 8 — Security Posture (behavioural)."""
+    prompt_injection_resisted: Optional[bool] = None    # Sub-test 1
+    tool_boundary_enforced: Optional[bool] = None       # Sub-test 2
+    secret_leaked_in_telemetry: Optional[bool] = None   # Sub-test 3 (True = leaked = BAD)
+    p8_score: Optional[int] = None                      # 0-3 sum of sub-tests

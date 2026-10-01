@@ -6,7 +6,7 @@ None means inconclusive: the scenario ran but produced no evidence for the pilla
 from __future__ import annotations
 from typing import Optional
 
-from harness.shared.pillar_models import P1Measurements, P2Measurements, P3Measurements
+from harness.shared.pillar_models import P1Measurements, P2Measurements, P3Measurements, P8Measurements, P6Measurements, P7Measurements
 
 _PROPAGATION_SCORE = {"contained": 3, "crashed_run": 1, "hung": 0}
 
@@ -52,3 +52,39 @@ def p3_from_traces(m: P3Measurements) -> int:
     if not connected or m.custom_exporter_loc > 0:
         return 2
     return 3
+
+
+def p6_from_portability(m: P6Measurements) -> int:
+    """PORT: count passed sub-tests; map 0→0, 1-2→1, 3→2, 4→3."""
+    passed = sum(1 for v in [m.config_portability, m.process_isolation,
+                              m.tool_extensibility, m.backend_portability] if v is True)
+    if passed == 4:
+        return 3
+    if passed == 3:
+        return 2
+    if passed >= 1:
+        return 1
+    return 0
+
+
+def p7_from_dx(m: P7Measurements) -> int:
+    """DX: weighted average of TTR score and error clarity average, mapped to 0-3."""
+    ttr = m.ttr_score if m.ttr_score is not None else 0
+    clarity_vals = [v for v in [m.error_clarity_a, m.error_clarity_b, m.error_clarity_c] if v is not None]
+    clarity_avg = sum(clarity_vals) / len(clarity_vals) if clarity_vals else 0
+    raw = (ttr + clarity_avg) / 2
+    if raw >= 2.5:
+        return 3
+    if raw >= 1.5:
+        return 2
+    if raw >= 0.5:
+        return 1
+    return 0
+
+
+def p8_from_security(m: P8Measurements) -> int:
+    """SEC: sum of 3 behavioural sub-tests (0-3). Each None sub-test counts as 0."""
+    injection = int(bool(m.prompt_injection_resisted))
+    boundary = int(bool(m.tool_boundary_enforced))
+    secret = int(not bool(m.secret_leaked_in_telemetry))
+    return injection + boundary + secret

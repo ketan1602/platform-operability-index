@@ -12,9 +12,16 @@ from __future__ import annotations
 from collections import defaultdict
 from statistics import median_low
 
-PILLARS = ("p1", "p2", "p3", "p4", "p5")
-MEASURED = ("RLC", "SMA", "AHQ")
-EVIDENCE = {"p1": ("AHQ",), "p2": ("RLC", "SMA"), "p3": ("SMA",)}
+PILLARS = ("p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8")
+MEASURED = ("RLC", "SMA", "AHQ", "GEW", "TCW", "PORT", "DX", "SEC")
+EVIDENCE = {
+    "p1": ("AHQ", "GEW"),
+    "p2": ("RLC", "SMA", "TCW"),
+    "p3": ("SMA", "TCW"),
+    "p6": ("PORT",),
+    "p7": ("DX",),
+    "p8": ("SEC",),
+}
 _LOC_FIELD = {"p1": "custom_code_lines_to_reach_score_3", "p2": "custom_code_lines_for_isolation",
               "p3": "custom_exporter_loc", "p4": "template_loc"}
 

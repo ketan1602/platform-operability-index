@@ -38,6 +38,14 @@ def _present(attrs: set[str]) -> list[str]:
     return [req for req in REQUIRED if any(a in attrs for a in ALIASES.get(req, (req,)))]
 
 
+def _int_tag(tags: dict, key: str) -> int:
+    val = tags.get(key)
+    try:
+        return int(val) if val is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
 def analyse(spans: list[dict], agent_names: list[str]) -> dict:
     ids = {s["spanID"] for s in spans}
     orphans = sum(
@@ -45,11 +53,15 @@ def analyse(spans: list[dict], agent_names: list[str]) -> dict:
         for ref in s.get("references", [])
         if ref.get("refType") == "CHILD_OF" and ref["spanID"] not in ids
     )
-    attrs = {k for s in spans for k in _tags(s)}
+    all_tags = [_tags(s) for s in spans]
+    attrs = {k for t in all_tags for k in t}
     text = " ".join(
-        s["operationName"] + " " + " ".join(str(v) for v in _tags(s).values()) for s in spans
+        s["operationName"] + " " + " ".join(str(v) for v in t.values())
+        for s, t in zip(spans, all_tags)
     ).lower()
     present = _present(attrs)
+    total_input = sum(_int_tag(t, "gen_ai.usage.input_tokens") for t in all_tags)
+    total_output = sum(_int_tag(t, "gen_ai.usage.output_tokens") for t in all_tags)
     return {
         "framework_spans": len(spans),
         "trace_ids_per_run": len({s["traceID"] for s in spans}),
@@ -58,4 +70,6 @@ def analyse(spans: list[dict], agent_names: list[str]) -> dict:
         "missing_required_attributes": [r for r in REQUIRED if r not in present],
         "agents_invoked": len(agent_names),
         "agents_traced": sum(1 for a in agent_names if a.lower() in text),
+        "total_input_tokens": total_input,
+        "total_output_tokens": total_output,
     }
