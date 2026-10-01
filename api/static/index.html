@@ -10,7 +10,7 @@
   <header class="topbar">
     <div>
       <h1>Platform Operability Index</h1>
-      <p class="muted">5 frameworks × 5 pillars × 2 scenarios × 2 implementations</p>
+      <p class="muted">5 frameworks × 8 pillars × 8 scenarios</p>
     </div>
     <div id="preflight" class="preflight" aria-live="polite"></div>
   </header>
@@ -32,18 +32,21 @@
         <div class="checks" id="fw-checks"></div>
       </fieldset>
       <fieldset>
-        <legend>Measured scenarios <span class="muted">(live only — produce P1–P3)</span></legend>
+        <legend>Measured scenarios <span class="muted">(live only)</span></legend>
         <div class="checks">
           <label><input type="checkbox" name="scenario" value="RLC" checked> RLC — runaway ReAct loop <span class="muted">P2</span></label>
           <label><input type="checkbox" name="scenario" value="SMA" checked> SMA — supervisor multi-agent <span class="muted">P2 · P3</span></label>
           <label><input type="checkbox" name="scenario" value="AHQ" checked> AHQ — approval, kill, resume <span class="muted">P1</span></label>
+          <label><input type="checkbox" name="scenario" value="SEC" checked> SEC — security posture <span class="muted">P8</span></label>
+          <label><input type="checkbox" name="scenario" value="PORT" checked> PORT — portability sub-tests <span class="muted">P6</span></label>
+          <label><input type="checkbox" name="scenario" value="DX" checked> DX — developer experience <span class="muted">P7</span></label>
         </div>
       </fieldset>
       <fieldset>
-        <legend>Baseline workflows</legend>
+        <legend>Baseline + evidence workflows</legend>
         <div class="checks">
-          <label><input type="checkbox" name="scenario" value="GEW"> GEW — enterprise approval</label>
-          <label><input type="checkbox" name="scenario" value="TCW"> TCW — telco CVM/NBA</label>
+          <label><input type="checkbox" name="scenario" value="GEW"> GEW — enterprise approval <span class="muted">P1</span></label>
+          <label><input type="checkbox" name="scenario" value="TCW"> TCW — telco CVM/NBA <span class="muted">P2 · P3</span></label>
         </div>
       </fieldset>
       <fieldset>
