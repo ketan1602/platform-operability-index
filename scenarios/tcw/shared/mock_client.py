@@ -1,9 +1,9 @@
-"""Framework-agnostic HTTP client for TCW mock infrastructure.
+"""Framework-agnostic client for TCW backing services.
 
-Env vars (set by docker-compose or test runner):
-  NEO4J_STUB_URL      — base URL of neo4j_stub     (default: http://localhost:8101)
-  ML_ENDPOINT_URL     — base URL of ml_endpoint     (default: http://localhost:8102)
-  CHANNEL_ADAPTER_URL — base URL of channel_adapter (default: http://localhost:8103)
+Customer graph: real Neo4j (NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD), seeded by
+scenarios.tcw.seed_neo4j. ML scoring and channel dispatch: HTTP stubs at
+ML_ENDPOINT_URL and CHANNEL_ADAPTER_URL. All addresses come from the environment
+(./infra.sh up writes them); a missing one is a loud error, never a default.
 
 All functions return fixture data immediately when DRY_RUN=true,
 so the entire TCW scenario is exercisable without running any server.
@@ -12,10 +12,19 @@ from __future__ import annotations
 import os
 import requests
 
-NEO4J_STUB_URL = os.environ.get("NEO4J_STUB_URL", "http://localhost:8101")
-ML_ENDPOINT_URL = os.environ.get("ML_ENDPOINT_URL", "http://localhost:8102")
-CHANNEL_ADAPTER_URL = os.environ.get("CHANNEL_ADAPTER_URL", "http://localhost:8103")
 _TIMEOUT = 10
+_GRAPH_QUERY = """
+MATCH (c:POICustomer {customer_id: $customer_id})
+OPTIONAL MATCH (c)-[:HAS_PRODUCT]->(p:POIProduct)
+RETURN c, collect(p.product_id) AS products
+"""
+
+
+def _url(var: str) -> str:
+    value = os.environ.get(var, "")
+    if not value:
+        raise RuntimeError(f"{var} must be set (run ./infra.sh up)")
+    return value
 
 
 def _dry() -> bool:
@@ -40,14 +49,15 @@ _DISPATCH_FIXTURE = {"receipt_id": "dry-dispatch-001", "channel": "email", "stat
 
 
 def query_customer_graph(customer_id: str) -> dict:
-    """Step 1 — fetch customer 360 view from Neo4j stub."""
+    """Step 1 — fetch the customer 360 view from Neo4j."""
     if _dry():
         return {**_GRAPH_FIXTURE, "customer_id": customer_id}
-    r = requests.get(
-        f"{NEO4J_STUB_URL}/graph/customer/{customer_id}", timeout=_TIMEOUT
-    )
-    r.raise_for_status()
-    return r.json()
+    from scenarios.tcw.seed_neo4j import driver
+    with driver() as d:
+        records = d.execute_query(_GRAPH_QUERY, customer_id=customer_id).records
+    if not records:
+        raise LookupError(f"customer {customer_id} not in graph — run python -m scenarios.tcw.seed_neo4j")
+    return {**dict(records[0]["c"]), "products": records[0]["products"]}
 
 
 def score_propensity(customer_id: str, graph_data: dict) -> list:
@@ -55,7 +65,7 @@ def score_propensity(customer_id: str, graph_data: dict) -> list:
     if _dry():
         return _RECS_FIXTURE
     r = requests.post(
-        f"{ML_ENDPOINT_URL}/propensity/score",
+        f"{_url('ML_ENDPOINT_URL')}/propensity/score",
         json={"customer_id": customer_id, "features": graph_data},
         timeout=_TIMEOUT,
     )
@@ -68,7 +78,7 @@ def check_eligibility(customer_id: str, recommendations: list) -> list:
     if _dry():
         return _ELIGIBLE_FIXTURE
     r = requests.post(
-        f"{ML_ENDPOINT_URL}/eligibility/check",
+        f"{_url('ML_ENDPOINT_URL')}/eligibility/check",
         json={"customer_id": customer_id, "candidates": recommendations},
         timeout=_TIMEOUT,
     )
@@ -81,7 +91,7 @@ def dispatch_channel(customer_id: str, offer: str, workflow_id: str) -> dict:
     if _dry():
         return {**_DISPATCH_FIXTURE, "workflow_id": workflow_id}
     r = requests.post(
-        f"{CHANNEL_ADAPTER_URL}/channel/dispatch",
+        f"{_url('CHANNEL_ADAPTER_URL')}/channel/dispatch",
         json={"customer_id": customer_id, "offer": offer, "workflow_id": workflow_id},
         timeout=_TIMEOUT,
     )

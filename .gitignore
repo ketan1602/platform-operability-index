@@ -33,3 +33,7 @@ htmlcov/
 
 # Results (large YAML dumps — track only schema, not run data)
 results/runs/**/*.yaml
+
+# Local infra state (port-forward pids, generated connection env)
+.infra/
+.env.infra

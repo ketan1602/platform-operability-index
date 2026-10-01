@@ -4,6 +4,9 @@ Each score_pN function is a pure function: given a PNMeasurements object it
 returns an integer 0–3.  No side-effects, no I/O.
 """
 from __future__ import annotations
+from typing import Optional
+
+from harness.shared import scoring_v2
 from harness.shared.pillar_models import (
     P1Measurements,
     P2Measurements,
@@ -15,6 +18,8 @@ from harness.shared.pillar_models import (
 
 def score_p1(m: P1Measurements) -> int:
     """P1 — Durable Execution & Replayability."""
+    if m.resume_succeeded is not None:
+        return scoring_v2.p1_from_resume(m)
     re_exec = m.steps_re_executed_on_resume or 0
     dups = m.duplicate_tool_calls_on_mid_write or 0
     fmt = m.checkpoint_format or ""
@@ -36,11 +41,15 @@ def score_p1(m: P1Measurements) -> int:
     return 1
 
 
-def score_p2(m: P2Measurements) -> int:
+def score_p2(m: P2Measurements) -> Optional[int]:
     """P2 — Blast-Radius Containment."""
     bleed = m.credential_bleed_events or 0
     if bleed > 0:
         return 0
+    if m.failure_propagation is not None:
+        return scoring_v2.p2_from_isolation(m)
+    if m.loop_halted_by_framework is not None:
+        return scoring_v2.p2_from_loop(m)
 
     if m.isolation_requires_custom_code:
         return 1
@@ -59,6 +68,8 @@ def score_p2(m: P2Measurements) -> int:
 
 def score_p3(m: P3Measurements) -> int:
     """P3 — Observability-Nativeness."""
+    if m.framework_spans is not None:
+        return scoring_v2.p3_from_traces(m)
     if not m.oss_stack_viable:
         return 0
 

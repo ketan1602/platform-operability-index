@@ -29,21 +29,21 @@ The five pillars were selected from the failure modes most commonly cited in ent
 ### P1 — Durable Execution & Replayability
 **The failure mode:** an agent crashes at step 4 of 7. Without checkpointing, the entire workflow replays from step 1 — re-running external API calls, retrying CRM writes, re-triggering approvals. With idempotency gaps, retried calls cause duplicate side effects.
 
-**What we measure:** can the framework checkpoint mid-run, resume from a specific step, and guarantee idempotent tool execution? Is the checkpoint format inspectable by a human operator, or is it opaque binary?
+**What we measure (AHQ scenario):** an agent pauses at the framework's own human-approval gate before an irreversible action. The harness SIGKILLs the process, sends the approval through RabbitMQ while no agent process exists, then delivers it twice (at-least-once, as queues do) to two fresh processes resuming at the same instant. Does the run resume with its state intact, without re-running earlier steps, and does the irreversible action execute exactly once? How much custom persistence code did it take?
 
 **Why this matters at scale:** at 10,000 agent runs/day, even a 1% crash rate means 100 full workflow replays daily. At step-level restart, that's a 7× reduction in wasted compute and external API calls.
 
 ### P2 — Blast-Radius Containment
 **The failure mode:** a prompt injection or model hallucination triggers an infinite tool-calling loop. Without native containment, the loop runs until it exhausts API credits, fills a database, or is killed by ops after a page.
 
-**What we measure:** does the framework enforce a loop budget by default? Does it surface a structured, catchable error when the budget is exceeded? Or is the only containment mechanism a platform-level SIGTERM?
+**What we measure (RLC and SMA scenarios):** in RLC, a ReAct agent is given a tool that never returns what it asks for. Does the framework stop the loop *with its default settings*, and does it surface a typed signal (an exception class or typed stop reason) the platform can catch? If not, the harness — acting as the platform — kills the process at a tool-call ceiling. A second trial sets the framework's documented limit and checks it is honoured. In SMA, one specialist agent's tool fails: does the failure stay inside that agent, or does it crash or hang the whole multi-agent run?
 
 **Why this matters at scale:** a runaway loop in a shared multi-tenant environment is a cross-tenant incident. Native containment means the framework handles this without operator intervention; SIGTERM-only containment means a human must be paged.
 
 ### P3 — Observability Nativeness
 **The failure mode:** an agent loop fails intermittently. Your SRE team checks Grafana and finds no spans, no token counts, no latency histograms — because the framework emits no OpenTelemetry data by default. Root-cause analysis requires log archaeology.
 
-**What we measure:** does the framework emit OTel Gen-AI semantic convention spans out of the box? Specifically: `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`. Does your existing Prometheus/Grafana stack work without a custom exporter?
+**What we measure (SMA scenario):** the harness installs the standard platform OTel setup — a global TracerProvider exporting OTLP to Jaeger — and nothing framework-specific. After a supervisor delegates to three specialists, the run's spans are read back from Jaeger. Do they carry the Gen-AI semantic-convention attributes (`gen_ai.operation.name`, `gen_ai.provider.name` or its predecessor `gen_ai.system`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`)? Is the whole multi-agent run one connected trace, with every agent visible and no orphaned spans?
 
 **Why this matters at scale:** a framework that requires a custom OTel exporter means one more piece of infrastructure your platform team owns, maintains, and on-calls for.
 
@@ -75,33 +75,44 @@ We use a 0–3 ordinal scale per pillar because the differences that matter in p
 
 Continuous scoring would imply false precision. Whether LangGraph's resume latency is 280ms or 310ms is not what determines framework selection — whether it *has* resume at all is.
 
-### Two scenarios: fixed and idiomatic
+### Measure behaviour, don't describe it
 
-Each scenario is implemented twice per framework:
-- **Fixed:** all 5 frameworks run the same linear DAG with identical tool signatures. This eliminates implementation variance and isolates the framework's own operability properties.
-- **Idiomatic:** each framework uses its natural patterns (LangGraph conditional edges, AutoGen GroupChat, OpenAI handoffs, ADK SequentialAgent, Strands orchestrator). This reveals whether native patterns impose operability trade-offs.
+An operability benchmark earns credibility only if its scores come from what the framework *did*, not from what its documentation says. POI v1 scored durability, containment and observability largely from desk research, and several of those values turned out to be wrong once measured. For example, LangGraph's default recursion limit is 10,007 steps, not 25, and two frameworks re-raise a specialist agent's tool exception and crash the whole run.
 
-Scores are framework properties, not scenario properties — they are identical across fixed and idiomatic runs, as expected. The two implementation types exist to validate that the fixed baseline is representative.
+POI therefore separates two kinds of scenario.
 
-### Two scenarios: GEW and TCW
+**Measured scenarios — the evidence for P1–P3.** Each one is built to stress a specific pillar. All are idiomatic: they exist to exercise each framework's *native* mechanism, so a lowest-common-denominator version would defeat the purpose.
 
-**GEW (Generic Enterprise Workflow)** — a 5-step approval chain with external data retrieval, risk scoring, human-in-the-loop gate, CRM write, and audit. Representative of document processing, approval routing, and compliance workflows.
+| Scenario | Stresses | What the harness does |
+|---|---|---|
+| **RLC** — ReAct loop containment | P2 | Gives a ReAct agent a tool that always answers "incomplete, call again"; kills the process at a tool-call ceiling if the framework doesn't stop it; repeats with the documented limit set |
+| **SMA** — supervisor multi-agent | P2, P3 | A supervisor delegates to billing, network and retention specialists (agents-as-tools). Reads the healthy run's spans back from Jaeger; then makes the network specialist's tool fail |
+| **AHQ** — async human approval | P1 | Pauses at the framework's approval gate, SIGKILLs the process, routes the approval through RabbitMQ, resumes in two fresh processes simultaneously |
 
-**TCW (Telco CVM/NBA Workflow)** — a 5-step customer value management pipeline: customer graph query → propensity scoring → eligibility check → offer personalisation → channel dispatch. Representative of personalisation, recommendation, and real-time decisioning workflows.
+**Baseline workflows — GEW and TCW.** A 5-step enterprise approval chain and a 5-step telco next-best-action pipeline, each implemented in a fixed (identical DAG) and an idiomatic form. They check that each framework can express a realistic workflow, and they carry the P4 and P5 inputs, which are framework properties that don't depend on the scenario. TCW's customer graph is a real Neo4j database.
 
-Two scenarios because a single scenario risks optimising for one domain's patterns. Both scenarios use mock infrastructure (FastAPI servers) that returns deterministic fixtures, making the benchmark reproducible without external services.
+### The harness is the platform
+
+The measured scenarios put the harness in the position a platform team occupies. It supervises each trial as a separate process and does only what a platform can do from outside: set a global OTel provider, kill a runaway process, route messages through a queue. It uses **SIGKILL, not SIGTERM**, because a graceful shutdown would let the framework flush its state and flatter its durability score. The backing services are real: Postgres (checkpoints), RabbitMQ (approvals), Jaeger in the Istio mesh (traces) and Neo4j (customer graph), all on the same Kubernetes cluster. Every tool call is written to an append-only ledger that survives the kill, and the evidence is read from that ledger rather than from what the framework reports about itself.
+
+### Live LLM, repeated, median, weakest link
+
+All measured scenarios run against a live LLM (AI Refinery, `openai/gpt-oss-120b`, the same model for every framework). A live model varies from run to run, so each framework × scenario is run **5 times**:
+- **Within a scenario**, the pillar score is the **median** of the repeats (the lower median, so scores stay whole numbers). The range is reported next to it.
+- **Across scenarios**, a pillar takes the **minimum**. Operability fails at its weakest link, so a framework that contains runaway loops but crashes when one agent fails does not get credit for containment.
+- **Inconclusive, not zero.** If the model stops calling the tool before any limit is reached, that RLC repeat produces no evidence. It is excluded from the median and counted separately. A framework is never scored on a test that didn't actually happen.
 
 ### Operability Tax (OT-LOC) as a second axis
 
 POI score tells you what the framework gives you. OT-LOC tells you what you pay for what it doesn't give you. A framework with POI=7 and OT=124 LOC may be more practical than one with POI=9 and OT=179 LOC, depending on your team's capacity to maintain scaffolding.
 
-OT-LOC is the sum of custom lines needed to reach score-3 behaviour across P1–P4:
-- P1: custom checkpoint/resume wrapper
+OT-LOC is the sum of custom lines needed across P1–P4:
+- P1: custom persistence the framework doesn't provide (for example, storing serialised run state in Postgres)
 - P2: kill-switch or loop-budget glue code
-- P3: custom OTel exporter shim
-- P4: Helm template count (all templates are operability overhead — a framework with a leaner packaging footprint requires less YAML to maintain)
+- P3: custom telemetry glue beyond the standard global OTel setup
+- P4: Helm template lines (all templates are operability overhead — a framework with a leaner packaging footprint requires less YAML to maintain)
 
-All OT-LOC inputs are either counted by code (`template_loc` via `_count_template_loc()`, `custom_exporter_loc`) or documented as named lists in source (`framework_specific_hacks_required`). No self-reported time estimates feed any score.
+Custom code is fenced in the implementations with `# poi:custom-begin` / `# poi:custom-end` markers, and the harness counts the fenced lines. Helm templates are counted directly. No estimate or self-reported time feeds any score.
 
 ---
 
@@ -109,9 +120,9 @@ All OT-LOC inputs are either counted by code (`template_loc` via `_count_templat
 
 | Pillar | Score 0 | Score 1 | Score 2 | Score 3 |
 |---|---|---|---|---|
-| **P1 Durable Execution** | No checkpoint | Checkpoint needs custom serialisation | Native checkpoint, parseable format, resume works | Portable checkpoint; concurrent-resume safe |
-| **P2 Blast-Radius** | No mechanism | Platform SIGTERM only | Configurable loop budget | Native runtime containment, structured error |
-| **P3 Observability** | No OTel spans | Partial spans, missing Gen-AI attributes | All attributes present, custom exporter required | Full Gen-AI OTel compliance, no custom exporter |
+| **P1 Durable Execution** (AHQ) | Cannot resume in a fresh process after SIGKILL | Resumes, but state is lost or earlier steps re-run | Resumes cleanly, but needs custom persistence code **or** executes the irreversible action twice under concurrent resume | Resumes cleanly from a native durable backend, zero custom code, action executes exactly once |
+| **P2 Blast-Radius** (RLC, SMA) | A failing agent hangs the whole run | Only a platform kill stops a runaway loop; **or** one failing agent crashes the whole run | Loop stops only once a limit is configured, or stops by default without a typed signal | Stops a runaway loop by default with a typed exception or stop reason, **and** a failing agent stays contained |
+| **P3 Observability** (SMA) | No OTel spans reach the collector | Spans lack required Gen-AI attributes | All attributes present, but the multi-agent run is not one connected trace, or custom telemetry code was needed | All attributes, one connected trace covering every agent, no custom code |
 | **P4 Packageability** | No Helm path | > 200 template lines | ≤ 200 lines, framework-specific K8s workarounds | ≤ 200 lines, zero workarounds, standard K8s primitives only |
 | **P5 Migration Fragility** | > 3 breaking changes/release avg | 1–3 breaking changes/release avg | < 1 breaking change/release, no schema migration | Zero breaking changes in patch; stable checkpoint schema |
 

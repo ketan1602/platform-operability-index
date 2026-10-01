@@ -2,6 +2,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional, Any
 from pydantic import BaseModel, Field
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -24,8 +25,11 @@ FRAMEWORK_NAMES: dict[FrameworkId, str] = {
 
 
 class ScenarioId(str, Enum):
-    GEW = "GEW"
-    TCW = "TCW"
+    GEW = "GEW"   # baseline workflow: enterprise approval chain
+    TCW = "TCW"   # baseline workflow: telco CVM / next-best-action
+    RLC = "RLC"   # ReAct loop containment            -> P2 evidence
+    SMA = "SMA"   # supervisor multi-agent             -> P2, P3 evidence
+    AHQ = "AHQ"   # async human approval, kill+resume  -> P1 evidence
 
 
 class ImplementationType(str, Enum):
@@ -51,7 +55,11 @@ class RunMetadata(BaseModel):
     implementation_type: ImplementationType
     pillar: Pillar
     infrastructure: str = "orbstack-k8s"
-    runner: str = "local"
+    runner: str = Field(default_factory=lambda: os.environ.get("POI_RUNNER", "local"))
+    run_mode: str = Field(
+        default_factory=lambda: "dry_run" if os.environ.get("DRY_RUN") == "true" else "live"
+    )
+    repeat: int = 0
 
 
 class PillarScores(BaseModel):

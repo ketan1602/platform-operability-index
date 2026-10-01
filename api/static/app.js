@@ -22,10 +22,10 @@ async function loadPreflight() {
   $("preflight").replaceChildren(
     chip("LLM credentials", r.llm_env_missing.length ? "error" : "success",
       r.llm_env_missing.length ? `Missing: ${r.llm_env_missing.join(", ")}` : "AI Refinery env vars set"),
-    chip(`Mock services ${up}/${mocks.length}`, up === mocks.length ? "success" : "error",
+    chip(`Services ${up}/${mocks.length}`, up === mocks.length ? "success" : "error",
       mocks.map(([k, v]) => `${k}: ${v}`).join(" · ")),
     chip(`Frameworks ${installed}/${fws.length}`, installed === fws.length ? "success" : "warning",
-      missingFw.length ? `Not installed: ${missingFw.join(", ")}` : "All framework packages installed"),
+      missingFw.length ? `No venv (run ./setup_venvs.sh): ${missingFw.join(", ")}` : "All adapter venvs present"),
   );
   bindTooltips($("preflight"));
 }
@@ -35,8 +35,18 @@ function renderFrameworkChecks() {
     el("label", {}, [el("input", { type: "checkbox", name: "fw", value: id, checked: "" }), ` ${name}`])));
 }
 
+const MEASURED = ["RLC", "SMA", "AHQ"];
+
+function comboCount() {
+  const live = document.querySelector("input[name=mode]:checked").value === "live";
+  const reps = Number($("repeats").value) || 1;
+  const perFw = checked("scenario").reduce((n, sc) =>
+    n + (MEASURED.includes(sc) ? (live ? reps : 0) : checked("impl").length), 0);
+  return checked("fw").length * perFw;
+}
+
 function updateCount() {
-  const n = checked("fw").length * checked("scenario").length * checked("impl").length;
+  const n = comboCount();
   $("combo-count").textContent = `${n} combination${n === 1 ? "" : "s"}`;
   $("run-btn").disabled = n === 0 || source !== null;
 }
@@ -54,7 +64,7 @@ function appendLog(line) {
 
 function addCombo(c) {
   const state = c.ok ? "success" : "error";
-  const label = `${c.framework} · ${c.scenario} · ${c.impl}`;
+  const label = `${c.framework} · ${c.scenario} · ${c.impl} · #${c.repeat}`;
   const children = [el("span", { class: `status status-${state}`, text: c.ok ? "✓ OK" : "✕ FAIL" }),
     el("span", { text: ` ${label}` })];
   if (c.error) children.push(el("span", { class: "combo-error", text: c.error }));
@@ -74,7 +84,8 @@ function finish(message) {
 function startRun() {
   const mode = document.querySelector("input[name=mode]:checked").value;
   const qs = new URLSearchParams({ frameworks: checked("fw").join(","),
-    scenarios: checked("scenario").join(","), impls: checked("impl").join(","), mode });
+    scenarios: checked("scenario").join(","), impls: checked("impl").join(","), mode,
+    repeats: $("repeats").value });
   done = 0; total = 0;
   $("combo-list").replaceChildren();
   $("log").textContent = "";
@@ -102,7 +113,9 @@ function startRun() {
 
 $("run-btn").addEventListener("click", startRun);
 $("stop-btn").addEventListener("click", () => finish("Run stopped — the server has killed the benchmark process."));
-document.querySelectorAll("#run-card input[type=checkbox]").forEach((i) => i.addEventListener("change", updateCount));
+document.querySelectorAll("#run-card input[type=checkbox], #run-card input[name=mode]")
+  .forEach((i) => i.addEventListener("change", updateCount));
+$("repeats").addEventListener("input", updateCount);
 renderFrameworkChecks();
 document.querySelectorAll("#fw-checks input").forEach((i) => i.addEventListener("change", updateCount));
 updateCount();

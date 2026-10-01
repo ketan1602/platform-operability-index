@@ -85,3 +85,20 @@ def make_openai_client():
         base_url=_require_base_url(),
         api_key=_require_api_key(),
     )
+
+
+def openai_compat() -> dict:
+    """Settings every framework needs to reach AI Refinery's OpenAI-compatible API.
+
+    The gateway rejects requests without an ``sdk_version`` header (it reports
+    "Invalid or expired token"), so each framework client must send it.
+    """
+    version = os.environ.get("AIREFINERY_SDK_VERSION", "")
+    if not version:
+        raise RuntimeError("AIREFINERY_SDK_VERSION must be set (see .env.example)")
+    return {
+        "base_url": _require_base_url(),
+        "api_key": _require_api_key(),
+        "model": get_model(),
+        "headers": {"sdk_version": version},
+    }

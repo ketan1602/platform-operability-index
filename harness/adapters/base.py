@@ -31,6 +31,7 @@ class SubprocessRunner:
         run_id: Optional[str] = None,
         extra_env: Optional[dict] = None,
         timeout_s: int = 600,
+        repeat: int = 0,
     ) -> RunResult:
         env = {**os.environ, **(extra_env or {})}
         cmd = [
@@ -43,11 +44,14 @@ class SubprocessRunner:
         ]
         if run_id:
             cmd += ["--run-id", run_id]
+        cmd += ["--repeat", str(repeat)]
 
         result = subprocess.run(
             cmd, env=env, capture_output=True, text=True, timeout=timeout_s
         )
 
+        if result.returncode != 0 and output_path.exists():
+            return RunResult.from_yaml(output_path.read_text())  # carries the adapter's error
         if result.returncode != 0:
             raise RuntimeError(
                 f"Adapter '{self._adapter_dir.name}' exited {result.returncode}:\n"

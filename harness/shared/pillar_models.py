@@ -14,6 +14,11 @@ class P1Measurements(BaseModel):
     concurrent_resume_collision: Optional[str] = None
     manual_watchdog_required: Optional[bool] = None
     custom_code_lines_to_reach_score_3: int = 0
+    # AHQ evidence: pause, SIGKILL, resume in a fresh process.
+    resume_succeeded: Optional[bool] = None
+    state_intact_after_kill: Optional[bool] = None
+    side_effect_executions: Optional[int] = None  # target: 1 even with 2 concurrent resumers
+    checkpoint_backend: Optional[str] = None
 
 
 class P2Measurements(BaseModel):
@@ -26,6 +31,16 @@ class P2Measurements(BaseModel):
     halt_latency_ms: Optional[int] = None
     isolation_requires_custom_code: Optional[bool] = None
     custom_code_lines_for_isolation: int = 0
+    # RLC evidence: agent with a tool that never satisfies it.
+    loop_halted_by_framework: Optional[bool] = None
+    halt_signal: Optional[str] = None           # exception class or typed stop reason
+    halt_signal_structured: Optional[bool] = None
+    tool_calls_before_halt: Optional[int] = None
+    configured_limit_honored: Optional[bool] = None
+    model_self_terminated: Optional[bool] = None  # loop never happened -> inconclusive
+    # SMA evidence: one specialist's tool raises.
+    failure_propagation: Optional[str] = None   # contained | crashed_run | hung
+    sibling_agents_completed: Optional[int] = None
 
 
 class P3Measurements(BaseModel):
@@ -38,6 +53,12 @@ class P3Measurements(BaseModel):
     custom_exporter_loc: int = 0
     proprietary_backend_required: Optional[bool] = None
     oss_stack_viable: Optional[bool] = None
+    # SMA evidence, read back from Jaeger.
+    framework_spans: Optional[int] = None
+    trace_ids_per_run: Optional[int] = None     # target: 1
+    orphan_spans: Optional[int] = None          # target: 0
+    agents_invoked: Optional[int] = None
+    agents_traced: Optional[int] = None
 
 
 class P4Measurements(BaseModel):

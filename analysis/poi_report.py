@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 import argparse
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 import structlog
@@ -20,6 +19,7 @@ _SCRIPT_DIR = Path(__file__).parent
 # Allows `python analysis/poi_report.py` as well as `-m analysis.poi_report`.
 sys.path.insert(0, str(_SCRIPT_DIR.parent))
 
+from analysis.aggregate import aggregate  # noqa: E402
 from analysis.sensitivity import compute_sensitivity  # noqa: E402
 
 log = structlog.get_logger(__name__)
@@ -48,34 +48,12 @@ def _load(results_dir: Path) -> list:
     return records
 
 
-def _score_matrix(records: list) -> dict[str, dict[str, float]]:
-    sums: dict = defaultdict(lambda: defaultdict(list))
-    for r in records:
-        fid = r.run_metadata.framework_id.value
-        for p in _PILLARS:
-            v = getattr(r.pillar_scores, p)
-            if v is not None:
-                sums[fid][p].append(v)
-    matrix: dict = {}
-    for fid, pillars in sorted(sums.items()):
-        matrix[fid] = {p: round(sum(vs) / len(vs)) for p, vs in pillars.items()}
-        matrix[fid]["poi_total"] = sum(matrix[fid].get(p, 0) for p in _PILLARS)
-    return matrix
+def _score_matrix(agg: dict) -> dict[str, dict]:
+    return {fid: e["scores"] for fid, e in agg.items()}
 
 
-def _ot_table(records: list) -> dict[str, int]:
-    seen: dict = {}
-    for r in records:
-        fid = r.run_metadata.framework_id.value
-        sc  = r.run_metadata.scenario_id.value
-        imp = r.run_metadata.implementation_type.value
-        key = (fid, sc, imp)
-        if key not in seen:
-            seen[key] = r.operability_tax.ot_loc
-    totals: dict = defaultdict(list)
-    for (fid, _, _), loc in seen.items():
-        totals[fid].append(loc)
-    return {fid: max(locs) for fid, locs in sorted(totals.items())}
+def _ot_table(agg: dict) -> dict[str, int]:
+    return {fid: e["ot_loc"] for fid, e in agg.items()}
 
 
 def _print_score_matrix(matrix: dict) -> None:
@@ -88,7 +66,8 @@ def _print_score_matrix(matrix: dict) -> None:
         name = _FW_NAMES.get(fid, fid)
         row  = f"{name:<18}"
         for p in _PILLARS:
-            row += f" {scores.get(p, '-'):>4}"
+            v = scores.get(p)
+            row += f" {'-' if v is None else v:>4}"
         row += f" {scores['poi_total']:>5}"
         print(row)
 
@@ -129,11 +108,14 @@ def build_report(results_dir: Path, samples: int = 1000) -> dict:
     records = _load(results_dir)
     if not records:
         return {"run_count": 0, "names": _FW_NAMES, "matrix": {}, "ot": {},
-                "ranking": [], "sensitivity": None}
-    matrix = _score_matrix(records)
-    ot = _ot_table(records)
+                "ranking": [], "sensitivity": None, "evidence": {}, "source": {}}
+    agg = aggregate(records)
+    matrix, ot = _score_matrix(agg), _ot_table(agg)
     return {
         "run_count": len(records),
+        "errors": sum(1 for r in records if r.error),
+        "evidence": {fid: e["evidence"] for fid, e in agg.items()},
+        "source": {fid: e["source"] for fid, e in agg.items()},
         "names": _FW_NAMES,
         "matrix": matrix,
         "ot": ot,
@@ -154,8 +136,8 @@ def main() -> None:
         print("No results found.")
         return
 
-    matrix = _score_matrix(records)
-    ot     = _ot_table(records)
+    agg = aggregate(records)
+    matrix, ot = _score_matrix(agg), _ot_table(agg)
 
     _print_score_matrix(matrix)
     _print_ot_table(ot, matrix)

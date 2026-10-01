@@ -1,7 +1,7 @@
 """P2 (Blast-Radius Containment) measurements for LangGraph F1.
 
 FI-3: Build a self-looping StateGraph. LangGraph raises GraphRecursionError
-at recursion_limit (default 25) — a framework-native kill switch.
+at recursion_limit (default 10,007 in langgraph 1.x) — a framework-native kill switch.
 FI-4: Credential injection is blocked at deployment layer (Kyverno
 require-tenant-label); tool-level credentials are per-config, not leaked.
 """
@@ -34,13 +34,14 @@ def _fi3_runaway_test() -> tuple[bool, int]:
     g.add_conditional_edges("loop", lambda _: "loop", {"loop": "loop", "__end__": END})
     graph = g.compile()
 
+    from langgraph.errors import GraphRecursionError
+
     t0 = time.monotonic()
     try:
         graph.invoke({"count": 0})
         contained = False
-    except Exception as exc:
-        name = type(exc).__name__.lower()
-        contained = "recursion" in name or "graphrecursion" in name or True
+    except GraphRecursionError:
+        contained = True  # only LangGraph's own limit counts; any other error is a crash
     halt_ms = int((time.monotonic() - t0) * 1000)
     log.info("fi3_runaway_test", contained=contained, halt_ms=halt_ms)
     return contained, halt_ms

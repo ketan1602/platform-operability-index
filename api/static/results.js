@@ -65,6 +65,25 @@ function renderRanking(r) {
   ]));
 }
 
+function evidenceText(cell) {
+  if (cell.median === null) return `inconclusive ×${cell.inconclusive}`;
+  const range = cell.min === cell.max ? "" : ` [${cell.min}–${cell.max}]`;
+  const inc = cell.inconclusive ? ` · ${cell.inconclusive} inc.` : "";
+  return `${cell.median}${range} · n${cell.n}${inc}`;
+}
+
+function renderEvidence(r) {
+  const head = el("tr", {}, [el("th", { text: "Framework" }),
+    ...["p1", "p2", "p3"].map((p) => el("th", { text: PILLAR_LABELS[p] }))]);
+  const rows = r.ranking.map((fid) => el("tr", {}, [
+    el("th", { scope: "row", text: `${r.names[fid]}${r.source[fid] === "baseline" ? " (baseline)" : ""}` }),
+    ...["p1", "p2", "p3"].map((p) => el("td", { class: "evidence" },
+      Object.entries(r.evidence[fid][p] || {}).map(([sc, cell]) =>
+        el("div", { text: `${sc}: ${evidenceText(cell)}` })))),
+  ]));
+  return el("table", { class: "matrix evidence-table" }, [el("thead", {}, head), el("tbody", {}, rows)]);
+}
+
 function renderSensitivity(r) {
   const s = r.sensitivity;
   const rows = s.pairs.map((p) => el("div", { class: "bar-row" }, [
@@ -84,7 +103,7 @@ async function loadResults() {
   const mode = document.querySelector("input[name=results-mode]:checked").value;
   const res = await fetch(`/api/v1/results?mode=${mode}`);
   const r = await res.json();
-  const ids = ["matrix", "ot", "ranking", "sensitivity"];
+  const ids = ["matrix", "ot", "ranking", "evidence", "sensitivity"];
   ids.forEach((id) => document.getElementById(id).replaceChildren());
   const meta = document.getElementById("results-meta");
   if (!r.run_count) {
@@ -92,10 +111,12 @@ async function loadResults() {
     document.getElementById("sens-meta").textContent = "";
     return;
   }
-  meta.textContent = `${r.run_count} run result files aggregated.`;
+  meta.textContent = `${r.run_count} run result files aggregated` +
+    (r.errors ? ` · ${r.errors} failed runs excluded.` : ".");
   document.getElementById("matrix").append(renderMatrix(r));
   document.getElementById("ot").append(renderOT(r));
   document.getElementById("ranking").append(...renderRanking(r));
+  document.getElementById("evidence").append(renderEvidence(r));
   document.getElementById("sensitivity").append(renderSensitivity(r));
   document.getElementById("sens-meta").textContent = `(${r.sensitivity.samples} Dirichlet weight samples)`;
   bindTooltips(document.getElementById("results-card"));

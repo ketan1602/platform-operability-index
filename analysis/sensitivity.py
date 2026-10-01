@@ -14,16 +14,16 @@ def _tag(pct: int) -> str:
 def compute_sensitivity(matrix: dict, n: int = 1000, seed: int | None = None) -> dict:
     rng = random.Random(seed)
     fids = sorted(matrix)
-    vecs = {f: [matrix[f].get(p, 0) for p in PILLARS] for f in fids}
+    vecs = {f: [matrix[f].get(p) or 0 for p in PILLARS] for f in fids}  # unscored pillar = 0
     eq_order = sorted(fids, key=lambda f: (-matrix[f]["poi_total"], f))
-    pairs = list(zip(eq_order, eq_order[1:]))
+    pairs = list(zip(eq_order, eq_order[1:], strict=False))
     wins = dict.fromkeys(pairs, 0)
     rank_hold = 0
 
     for _ in range(n):
         raw = [rng.gammavariate(1, 1) for _ in PILLARS]
         total = sum(raw)
-        ws = {f: sum(r / total * s for r, s in zip(raw, vecs[f])) for f in fids}
+        ws = {f: sum(r / total * s for r, s in zip(raw, vecs[f], strict=True)) for f in fids}
         if sorted(fids, key=lambda f: (-ws[f], f)) == eq_order:
             rank_hold += 1
         for a, b in pairs:

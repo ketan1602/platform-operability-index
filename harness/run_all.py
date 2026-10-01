@@ -1,118 +1,117 @@
-"""Run every POI benchmark combination in-process and write YAML results.
+"""Run POI benchmark combinations, each in its framework's own venv, and write YAML results.
 
-Covers all 5 frameworks × 2 scenarios × 2 impl types × all 5 pillars.
-Requires DRY_RUN=true unless real LLM / infra credentials are configured.
+Baseline scenarios (GEW, TCW) run fixed + idiomatic once each. Measured scenarios
+(RLC, SMA, AHQ) are idiomatic-only, need live frameworks and ./infra.sh up, and are
+repeated POI_REPEATS times (default 5) so scores are medians, not single draws.
 
 Usage:
-    DRY_RUN=true python -m harness.run_all
-    DRY_RUN=true python -m harness.run_all --results-dir /tmp/poi-results
+    DRY_RUN=true python -m harness.run_all --scenarios GEW TCW
+    python -m harness.run_all --frameworks F1 F5 --scenarios RLC --repeats 1
 """
 from __future__ import annotations
 import argparse
 import os
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
 import structlog
 
+from harness.adapters.base import SubprocessRunner
+
 log = structlog.get_logger(__name__)
 
 _ROOT = Path(__file__).parent.parent
-
-_ADAPTERS = {
-    "F1": ("harness.adapters.langgraph.adapter", "LangGraphAdapter"),
-    "F2": ("harness.adapters.ms_agent.adapter",  "AutoGenAdapter"),
-    "F3": ("harness.adapters.openai_sdk.adapter", "OpenAISDKAdapter"),
-    "F4": ("harness.adapters.google_adk.adapter", "GoogleADKAdapter"),
-    "F5": ("harness.adapters.strands.adapter",    "StrandsAdapter"),
-}
-_FRAMEWORKS = list(_ADAPTERS)
-_SCENARIOS  = ["GEW", "TCW"]
-_IMPLS      = ["fixed", "idiomatic"]
-
-_FW_NAMES = {
-    "F1": "LangGraph",
-    "F2": "AutoGen",
-    "F3": "OpenAI SDK",
-    "F4": "Google ADK",
-    "F5": "Strands",
-}
+_ADAPTER_DIRS = {"F1": "langgraph", "F2": "ms_agent", "F3": "openai_sdk", "F4": "google_adk", "F5": "strands"}
+_FW_NAMES = {"F1": "LangGraph", "F2": "AutoGen", "F3": "OpenAI SDK", "F4": "Google ADK", "F5": "Strands"}
+_BASELINE = ("GEW", "TCW")
+_MEASURED = ("RLC", "SMA", "AHQ")
+_IMPLS = ("fixed", "idiomatic")
 
 
-def _build_meta(fw: str, sc: str, impl: str, version: str):
-    from harness.shared.measurement import (
-        FrameworkId, ScenarioId, ImplementationType, Pillar, RunMetadata,
-    )
-    return RunMetadata(
-        framework_id=FrameworkId(fw),
-        framework_version=version,
-        scenario_id=ScenarioId(sc),
-        implementation_type=ImplementationType(impl),
-        pillar=Pillar.ALL,
-    )
+def _combos(args: argparse.Namespace, dry_run: bool) -> list[tuple[str, str, str, int]]:
+    repeats = 1 if dry_run else args.repeats
+    out = []
+    for fw in args.frameworks:
+        for sc in args.scenarios:
+            if sc in _MEASURED and dry_run:
+                continue  # measured scenarios have no canned mode — they exist to observe real behaviour
+            impls = ("idiomatic",) if sc in _MEASURED else tuple(i for i in args.impls)
+            reps = repeats if sc in _MEASURED else 1
+            out += [(fw, sc, impl, r) for impl in impls for r in range(reps)]
+    return out
 
 
-def _load_adapter(fw: str):
-    mod_path, cls_name = _ADAPTERS[fw]
-    mod = __import__(mod_path, fromlist=[cls_name])
-    return getattr(mod, cls_name)()
+def _already_done(results_dir: Path, fw: str, sc: str, impl: str, rep: int) -> bool:
+    """Return True if a successful (error-free) result file already exists."""
+    for p in results_dir.glob(f"*_{fw}_{sc}_{impl}_r{rep}_*.yaml"):
+        try:
+            text = p.read_text()
+            if "error: null" in text or "\nerror: ''\n" in text or "\nerror: \"\"\n" in text:
+                return True
+            # Files written without error field at all (older format) also count.
+            if "\nerror:" not in text:
+                return True
+        except OSError:
+            pass
+    return False
 
 
-def _run_combo(fw: str, sc: str, impl: str) -> str:
-    adapter = _load_adapter(fw)
-    meta = _build_meta(fw, sc, impl, adapter.framework_version)
-    result = adapter.run(meta, "all", sc, impl)
-    return result.to_yaml()
+def _run_one(fw: str, sc: str, impl: str, rep: int, out: Path) -> tuple[bool, str]:
+    runner = SubprocessRunner.for_adapter(_ROOT / "harness" / "adapters" / _ADAPTER_DIRS[fw])
+    result = runner.run("all", sc, impl, out, run_id=str(uuid.uuid4()), repeat=rep,
+                        timeout_s=int(os.environ.get("POI_COMBO_TIMEOUT_S", "3600")))
+    return result.error is None, (result.error or "")[:300]
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Run all POI combinations")
-    p.add_argument("--results-dir", type=Path,
-                   default=_ROOT / "results" / "runs")
-    p.add_argument("--frameworks", nargs="+", choices=_FRAMEWORKS, default=_FRAMEWORKS)
-    p.add_argument("--scenarios",  nargs="+", choices=_SCENARIOS,  default=_SCENARIOS)
-    p.add_argument("--impls",      nargs="+", choices=_IMPLS,      default=_IMPLS)
+    p = argparse.ArgumentParser(description="Run POI combinations")
+    p.add_argument("--results-dir", type=Path, default=_ROOT / "results" / "runs")
+    p.add_argument("--frameworks", nargs="+", choices=list(_ADAPTER_DIRS), default=list(_ADAPTER_DIRS))
+    p.add_argument("--scenarios", nargs="+", choices=_BASELINE + _MEASURED, default=list(_BASELINE + _MEASURED))
+    p.add_argument("--impls", nargs="+", choices=_IMPLS, default=list(_IMPLS))
+    p.add_argument("--repeats", type=int, default=int(os.environ.get("POI_REPEATS", "5")))
+    p.add_argument("--parallel", type=int, default=int(os.environ.get("POI_PARALLEL", "5")))
+    p.add_argument("--resume", action="store_true", help="Skip combos whose result file already exists")
     return p.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    results_dir: Path = args.results_dir
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    if os.environ.get("DRY_RUN") != "true":
-        log.warning("dry_run_not_set", msg="Set DRY_RUN=true to avoid real LLM calls")
-
+    dry_run = os.environ.get("DRY_RUN") == "true"
+    args.results_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_batch = str(uuid.uuid4())[:8]
+    batch = uuid.uuid4().hex[:8]
+    combos = _combos(args, dry_run)
+    if getattr(args, "resume", False):
+        skipped = [(fw, sc, impl, rep) for fw, sc, impl, rep in combos
+                   if _already_done(args.results_dir, fw, sc, impl, rep)]
+        combos = [(fw, sc, impl, rep) for fw, sc, impl, rep in combos
+                  if not _already_done(args.results_dir, fw, sc, impl, rep)]
+        if skipped:
+            print(f"  SKIP {len(skipped)} already-done combos (--resume)", flush=True)
+    print(f"Running {len(combos)} combinations → {args.results_dir}", flush=True)
     passed = failed = 0
-
-    combos = [
-        (fw, sc, impl)
-        for fw in args.frameworks
-        for sc in args.scenarios
-        for impl in args.impls
-    ]
-
-    print(f"Running {len(combos)} combinations → {results_dir}", flush=True)
-    for fw, sc, impl in combos:
-        label = f"{_FW_NAMES[fw]:15s} {sc} {impl}"
-        out = results_dir / f"{ts}_{fw}_{sc}_{impl}_{run_batch}.yaml"
-        try:
-            yaml_text = _run_combo(fw, sc, impl)
-            out.write_text(yaml_text)
-            print(f"  OK   {label}", flush=True)
-            passed += 1
-        except Exception as exc:
-            log.error("combo_failed", fw=fw, sc=sc, impl=impl, error=str(exc))
-            print(f"  FAIL {label}: {exc}", flush=True)
-            failed += 1
-
+    with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
+        futures = {
+            pool.submit(_run_one, fw, sc, impl, rep,
+                        args.results_dir / f"{ts}_{fw}_{sc}_{impl}_r{rep}_{batch}.yaml"): (fw, sc, impl, rep)
+            for fw, sc, impl, rep in combos
+        }
+        for fut in as_completed(futures):
+            fw, sc, impl, rep = futures[fut]
+            label = f"{_FW_NAMES[fw]:15s} {sc} {impl} #{rep + 1}"
+            try:
+                ok, err = fut.result()
+            except Exception as exc:
+                ok, err = False, str(exc)[:300]
+            log.info("combo_finished", fw=fw, sc=sc, impl=impl, repeat=rep, ok=ok)
+            print(f"  {'OK  ' if ok else 'FAIL'} {label}" + ("" if ok else f": {err}"), flush=True)
+            passed, failed = passed + ok, failed + (not ok)
     print(f"\n{passed} passed  {failed} failed", flush=True)
-    if failed:
-        sys.exit(1)
+    sys.exit(1 if failed else 0)
 
 
 if __name__ == "__main__":

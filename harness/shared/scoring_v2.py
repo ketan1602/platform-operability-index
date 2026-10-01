@@ -1,0 +1,54 @@
+"""Scoring rules for measured evidence from the RLC, SMA and AHQ scenarios.
+
+None means inconclusive: the scenario ran but produced no evidence for the pillar
+(e.g. the model stopped calling the tool before any limit could be tested).
+"""
+from __future__ import annotations
+from typing import Optional
+
+from harness.shared.pillar_models import P1Measurements, P2Measurements, P3Measurements
+
+_PROPAGATION_SCORE = {"contained": 3, "crashed_run": 1, "hung": 0}
+
+
+def p1_from_resume(m: P1Measurements) -> int:
+    """AHQ: 0 cannot resume · 1 resumes lossy · 2 clean but custom/unsafe · 3 native, safe."""
+    if not m.resume_succeeded:
+        return 0
+    if not m.state_intact_after_kill or (m.steps_re_executed_on_resume or 0) > 0:
+        return 1
+    if m.custom_code_lines_to_reach_score_3 > 0 or (m.side_effect_executions or 0) > 1:
+        return 2
+    return 3
+
+
+def p2_from_loop(m: P2Measurements) -> Optional[int]:
+    """RLC: 3 default halt with typed signal · 2 halts only untyped or when configured · 1 platform kill."""
+    if m.model_self_terminated:  # default behaviour never exercised: no evidence either way
+        return None
+    if m.loop_halted_by_framework:
+        return 3 if m.halt_signal_structured else 2
+    if m.configured_limit_honored:
+        return 2
+    return 1
+
+
+def p2_from_isolation(m: P2Measurements) -> int:
+    """SMA: 3 failing specialist contained · 1 whole run crashed · 0 run hung."""
+    return _PROPAGATION_SCORE[m.failure_propagation]
+
+
+def p3_from_traces(m: P3Measurements) -> int:
+    """SMA: 0 no spans · 1 missing gen_ai attrs · 2 broken trace or custom glue · 3 native, one trace."""
+    if not m.framework_spans:
+        return 0
+    if m.missing_required_attributes:
+        return 1
+    connected = (
+        m.trace_ids_per_run == 1
+        and m.orphan_spans == 0
+        and m.agents_traced == m.agents_invoked
+    )
+    if not connected or m.custom_exporter_loc > 0:
+        return 2
+    return 3
