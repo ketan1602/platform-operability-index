@@ -36,12 +36,19 @@ function renderMatrix(r) {
     el("th", { text: "POI" })]);
   const rows = r.ranking.map((fid) => {
     const s = r.matrix[fid];
-    const cells = PILLARS.map((p) => el("td", {
-      class: `heat heat-${s[p] ?? "na"}`, text: s[p] ?? "–",
-      tip: `${r.names[fid]} · ${PILLAR_LABELS[p]}: ${s[p] ?? "not measured"} / 3`,
-    }));
+    const cells = PILLARS.map((p) => {
+      const raw = s[p];
+      const display = raw == null ? "–" : Number.isInteger(raw) ? raw : raw.toFixed(1);
+      const heatKey = raw == null ? "na" : Math.min(Math.floor(raw + 0.5), 3);
+      return el("td", {
+        class: `heat heat-${heatKey}`, text: display,
+        tip: `${r.names[fid]} · ${PILLAR_LABELS[p]}: ${display} / 3`,
+      });
+    });
+    const total = s.poi_total;
+    const totalDisplay = total == null ? "–" : Number.isInteger(total) ? total : total.toFixed(1);
     return el("tr", {}, [el("th", { scope: "row", text: r.names[fid] }), ...cells,
-      el("td", { class: "total", text: s.poi_total })]);
+      el("td", { class: "total", text: totalDisplay })]);
   });
   return el("table", { class: "matrix" }, [el("thead", {}, head), el("tbody", {}, rows)]);
 }
@@ -59,18 +66,23 @@ function renderOT(r) {
   ])));
 }
 
+function fmtScore(v) {
+  if (v == null) return "–";
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
 function renderRanking(r) {
   return r.ranking.map((fid) => el("li", {}, [
     el("strong", { text: r.names[fid] }),
-    el("span", { class: "muted", text: ` POI ${r.matrix[fid].poi_total} · OT ${r.ot[fid] ?? "–"} LOC` }),
+    el("span", { class: "muted", text: ` POI ${fmtScore(r.matrix[fid].poi_total)} · OT ${r.ot[fid] ?? "–"} LOC` }),
   ]));
 }
 
 function evidenceText(cell) {
   if (cell.median === null) return `inconclusive ×${cell.inconclusive}`;
-  const range = cell.min === cell.max ? "" : ` [${cell.min}–${cell.max}]`;
+  const range = cell.min === cell.max ? "" : ` [${fmtScore(cell.min)}–${fmtScore(cell.max)}]`;
   const inc = cell.inconclusive ? ` · ${cell.inconclusive} inc.` : "";
-  return `${cell.median}${range} · n${cell.n}${inc}`;
+  return `${fmtScore(cell.median)}${range} · n${cell.n}${inc}`;
 }
 
 function renderEvidence(r) {

@@ -11,6 +11,24 @@ Rules (v2):
 from __future__ import annotations
 from collections import defaultdict
 from statistics import median_low
+from typing import Any, Optional
+
+from harness.shared import scoring as _scoring
+from harness.shared.pillar_models import (
+    P1Measurements, P2Measurements, P3Measurements, P4Measurements,
+    P5Measurements, P6Measurements, P7Measurements, P8Measurements,
+)
+
+_MODELS = {
+    "p1": P1Measurements, "p2": P2Measurements, "p3": P3Measurements,
+    "p4": P4Measurements, "p5": P5Measurements, "p6": P6Measurements,
+    "p7": P7Measurements, "p8": P8Measurements,
+}
+_SCORERS = {
+    "p1": _scoring.score_p1, "p2": _scoring.score_p2, "p3": _scoring.score_p3,
+    "p4": _scoring.score_p4, "p5": _scoring.score_p5, "p6": _scoring.score_p6,
+    "p7": _scoring.score_p7, "p8": _scoring.score_p8,
+}
 
 PILLARS = ("p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8")
 MEASURED = ("RLC", "SMA", "AHQ", "GEW", "TCW", "PORT", "DX", "SEC")
@@ -30,6 +48,18 @@ def _tree():
     return defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
 
+def _rescore(pillar: str, raw: dict) -> Optional[Any]:
+    """Re-score from raw measurement dict using current formulas; None on failure."""
+    model_cls = _MODELS.get(pillar)
+    scorer = _SCORERS.get(pillar)
+    if not model_cls or not scorer:
+        return None
+    try:
+        return scorer(model_cls(**raw))
+    except Exception:
+        return None
+
+
 def _collect(records: list) -> tuple[dict, dict]:
     scores, locs = _tree(), _tree()
     for r in records:
@@ -39,9 +69,13 @@ def _collect(records: list) -> tuple[dict, dict]:
         for p in PILLARS:
             if p not in r.raw_measurements:
                 continue
-            scores[fid][p][sc].append(getattr(r.pillar_scores, p))
+            raw = r.raw_measurements[p]
+            score = _rescore(p, raw)
+            if score is None:
+                score = getattr(r.pillar_scores, p)
+            scores[fid][p][sc].append(score)
             if p in _LOC_FIELD:
-                locs[fid][p][sc].append(r.raw_measurements[p].get(_LOC_FIELD[p]) or 0)
+                locs[fid][p][sc].append(raw.get(_LOC_FIELD[p]) or 0)
     return scores, locs
 
 

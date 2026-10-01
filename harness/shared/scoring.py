@@ -44,7 +44,7 @@ def score_p1(m: P1Measurements) -> int:
     return 1
 
 
-def score_p2(m: P2Measurements) -> Optional[int]:
+def score_p2(m: P2Measurements) -> Optional[float]:
     """P2 — Blast-Radius Containment."""
     bleed = m.credential_bleed_events or 0
     if bleed > 0:
@@ -69,7 +69,7 @@ def score_p2(m: P2Measurements) -> Optional[int]:
     return 1
 
 
-def score_p3(m: P3Measurements) -> int:
+def score_p3(m: P3Measurements) -> float:
     """P3 — Observability-Nativeness."""
     if m.framework_spans is not None:
         return scoring_v2.p3_from_traces(m)

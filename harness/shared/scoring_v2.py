@@ -33,25 +33,40 @@ def p2_from_loop(m: P2Measurements) -> Optional[int]:
     return 1
 
 
-def p2_from_isolation(m: P2Measurements) -> int:
-    """SMA: 3 failing specialist contained · 1 whole run crashed · 0 run hung."""
-    return _PROPAGATION_SCORE[m.failure_propagation]
+def p2_from_isolation(m: P2Measurements) -> float:
+    """SMA: continuous score from sibling completion ratio (0–3).
+
+    Max siblings = total specialists - 1 failing = 2 (SMA uses 3 specialists).
+    sibling_agents_completed / 2 * 3 → 0.0 | 1.5 | 3.0
+    Falls back to propagation enum when sibling count is absent.
+    """
+    siblings = m.sibling_agents_completed
+    if siblings is not None:
+        return round(min(siblings / 2.0, 1.0) * 3.0, 1)
+    return float(_PROPAGATION_SCORE.get(m.failure_propagation or "", 0))
 
 
-def p3_from_traces(m: P3Measurements) -> int:
-    """SMA: 0 no spans · 1 missing gen_ai attrs · 2 broken trace or custom glue · 3 native, one trace."""
+def p3_from_traces(m: P3Measurements) -> float:
+    """SMA/TCW: continuous score (0.0–3.0) from spans + attribute coverage + trace connectivity.
+
+    base 1.0  — framework emits any gen_ai spans
+    +0–1.0    — attribute coverage: (present / total_required)
+    +0–1.0    — connectivity: (agents_traced / agents_invoked) × orphan penalty
+    """
     if not m.framework_spans:
-        return 0
-    if m.missing_required_attributes:
-        return 1
-    connected = (
-        m.trace_ids_per_run == 1
-        and m.orphan_spans == 0
-        and m.agents_traced == m.agents_invoked
-    )
-    if not connected or m.custom_exporter_loc > 0:
-        return 2
-    return 3
+        return 0.0
+    present = len(m.required_attributes_emitted_by_default or [])
+    missing = len(m.missing_required_attributes or [])
+    total = present + missing
+    attr_score = present / total if total > 0 else 1.0
+    invoked = m.agents_invoked or 1
+    traced = m.agents_traced or 0
+    connectivity = traced / invoked
+    if m.orphan_spans:
+        connectivity *= 0.5
+    if m.custom_exporter_loc and m.custom_exporter_loc > 0:
+        connectivity *= 0.75
+    return min(round(1.0 + attr_score + connectivity, 1), 3.0)
 
 
 def p6_from_portability(m: P6Measurements) -> int:
