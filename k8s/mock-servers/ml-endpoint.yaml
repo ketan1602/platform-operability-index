@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-endpoint
+  namespace: poi
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: ml-endpoint}
+  template:
+    metadata:
+      labels: {app: ml-endpoint}
+    spec:
+      containers:
+      - name: server
+        image: localhost:5000/poi-mock-servers:latest
+        imagePullPolicy: Always
+        env:
+        - {name: SERVER_MODULE, value: ml_endpoint}
+        - {name: HTTP_PORT, value: "8102"}
+        - {name: MCP_PORT,  value: "9102"}
+        ports:
+        - {containerPort: 8102, name: http}
+        - {containerPort: 9102, name: mcp}
+        livenessProbe:
+          httpGet: {path: /health, port: 8102}
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet: {path: /health, port: 8102}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits:   {cpu: 200m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-endpoint
+  namespace: poi
+spec:
+  selector: {app: ml-endpoint}
+  ports:
+  - {name: http, port: 8102, targetPort: 8102}
+  - {name: mcp,  port: 9102, targetPort: 9102}

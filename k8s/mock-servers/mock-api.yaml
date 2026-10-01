@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-api
+  namespace: poi
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mock-api}
+  template:
+    metadata:
+      labels: {app: mock-api}
+    spec:
+      containers:
+      - name: server
+        image: localhost:5000/poi-mock-servers:latest
+        imagePullPolicy: Always
+        env:
+        - {name: SERVER_MODULE, value: mock_api_server}
+        - {name: HTTP_PORT, value: "8001"}
+        - {name: MCP_PORT,  value: "9001"}
+        ports:
+        - {containerPort: 8001, name: http}
+        - {containerPort: 9001, name: mcp}
+        livenessProbe:
+          httpGet: {path: /health, port: 8001}
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet: {path: /health, port: 8001}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits:   {cpu: 200m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-api
+  namespace: poi
+spec:
+  selector: {app: mock-api}
+  ports:
+  - {name: http, port: 8001, targetPort: 8001}
+  - {name: mcp,  port: 9001, targetPort: 9001}

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Bring up the real backing services the live POI scenarios use.
 #   ./infra.sh up | down | status
-# Postgres, Neo4j, RabbitMQ: port-forwarded from the K8s cluster (works under STRICT mTLS).
-# Jaeger: the Istio tracing addon in istio-system (infrastructure/jaeger/jaeger.yaml), port-forwarded.
-# Stubs that stay stubs (GEW mocks, TCW ML + channel): local uvicorn processes.
+# Prerequisites: ./deploy-mocks.sh must have been run at least once to deploy
+# the mock server pods to the 'poi' namespace before calling ./infra.sh up.
+# All services (backing + mock) are port-forwarded from K8s — nothing runs as a bare process.
 # Credentials are read from the cluster's K8s secrets into .env.infra (gitignored, 0600).
 set -euo pipefail
 
@@ -94,26 +94,28 @@ up() {
   mkdir -p "$STATE"
   kubectl --context "$KUBE_CONTEXT" get deploy jaeger -n "$TRACING_NS" >/dev/null 2>&1 \
     || die "Jaeger not deployed — kubectl apply -f infrastructure/jaeger/jaeger.yaml"
-  pf pf-postgres "$NS" postgres "${PG_PORT}:5432"
-  pf pf-neo4j    "$NS" neo4j    "${NEO4J_PORT}:7687"
-  pf pf-rabbitmq "$NS" rabbitmq "${AMQP_PORT}:5672"
-  pf pf-otlp     "$TRACING_NS" jaeger-collector "${OTLP_PORT}:4318"
-  pf pf-jaeger   "$TRACING_NS" tracing "${JAEGER_UI_PORT}:80"
-  bg mock-api      python3 -m uvicorn scenarios.gew.mock_infrastructure.mock_api_server:app --port 8001
-  bg mock-crm      python3 -m uvicorn scenarios.gew.mock_infrastructure.mock_crm_server:app --port 8002
-  bg mock-approval python3 -m uvicorn scenarios.gew.mock_infrastructure.approval_server:app --port 8003
-  bg mock-ml       python3 -m uvicorn scenarios.tcw.mock_infrastructure.ml_endpoint:app --port 8102
-  bg mock-channel  python3 -m uvicorn scenarios.tcw.mock_infrastructure.channel_adapter:app --port 8103
-  bg mock-api-mcp      python3 -c "from scenarios.gew.mock_infrastructure.mock_api_server import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9001)"
-  bg mock-crm-mcp      python3 -c "from scenarios.gew.mock_infrastructure.mock_crm_server import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9002)"
-  bg mock-approval-mcp python3 -c "from scenarios.gew.mock_infrastructure.approval_server import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9003)"
-  bg mock-ml-mcp       python3 -c "from scenarios.tcw.mock_infrastructure.ml_endpoint import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9102)"
-  bg mock-channel-mcp  python3 -c "from scenarios.tcw.mock_infrastructure.channel_adapter import mcp_app; mcp_app.run(transport='streamable-http', host='0.0.0.0', port=9103)"
-  wait_port "$PG_PORT" pf-postgres; wait_port "$NEO4J_PORT" pf-neo4j; wait_port "$AMQP_PORT" pf-rabbitmq
-  wait_port "$OTLP_PORT" pf-otlp; wait_port "$JAEGER_UI_PORT" pf-jaeger
-  for p in 8001 8002 8003 8102 8103; do wait_port "$p" "mock-$p"; done
-  wait_port 9001 mock-api-mcp; wait_port 9002 mock-crm-mcp; wait_port 9003 mock-approval-mcp
-  wait_port 9102 mock-ml-mcp; wait_port 9103 mock-channel-mcp
+  kubectl --context "$KUBE_CONTEXT" -n poi get deploy mock-api >/dev/null 2>&1 \
+    || die "Mock servers not deployed — run ./deploy-mocks.sh first"
+
+  # Backing services (K8s cluster)
+  pf pf-postgres "$NS"          postgres          "${PG_PORT}:5432"
+  pf pf-neo4j    "$NS"          neo4j             "${NEO4J_PORT}:7687"
+  pf pf-rabbitmq "$NS"          rabbitmq          "${AMQP_PORT}:5672"
+  pf pf-otlp     "$TRACING_NS"  jaeger-collector  "${OTLP_PORT}:4318"
+  pf pf-jaeger   "$TRACING_NS"  tracing           "${JAEGER_UI_PORT}:80"
+
+  # Mock servers (poi namespace K8s pods — HTTP + MCP on same port-forward)
+  pf pf-mock-api      poi  mock-api        "8001:8001 9001:9001"
+  pf pf-mock-crm      poi  mock-crm        "8002:8002 9002:9002"
+  pf pf-mock-approval poi  mock-approval   "8003:8003 9003:9003"
+  pf pf-mock-ml       poi  ml-endpoint     "8102:8102 9102:9102"
+  pf pf-mock-channel  poi  channel-adapter "8103:8103 9103:9103"
+
+  wait_port "$PG_PORT" pf-postgres; wait_port "$NEO4J_PORT" pf-neo4j
+  wait_port "$AMQP_PORT" pf-rabbitmq; wait_port "$OTLP_PORT" pf-otlp
+  wait_port "$JAEGER_UI_PORT" pf-jaeger
+  for p in 8001 8002 8003 8102 8103; do wait_port "$p" "pf-mock-${p}"; done
+
   ensure_database
   write_env
   seed_graph

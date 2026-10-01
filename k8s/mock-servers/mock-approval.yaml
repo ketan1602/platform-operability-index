@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-approval
+  namespace: poi
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mock-approval}
+  template:
+    metadata:
+      labels: {app: mock-approval}
+    spec:
+      containers:
+      - name: server
+        image: localhost:5000/poi-mock-servers:latest
+        imagePullPolicy: Always
+        env:
+        - {name: SERVER_MODULE, value: approval_server}
+        - {name: HTTP_PORT, value: "8003"}
+        - {name: MCP_PORT,  value: "9003"}
+        ports:
+        - {containerPort: 8003, name: http}
+        - {containerPort: 9003, name: mcp}
+        livenessProbe:
+          httpGet: {path: /health, port: 8003}
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet: {path: /health, port: 8003}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits:   {cpu: 200m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-approval
+  namespace: poi
+spec:
+  selector: {app: mock-approval}
+  ports:
+  - {name: http, port: 8003, targetPort: 8003}
+  - {name: mcp,  port: 9003, targetPort: 9003}

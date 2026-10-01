@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-crm
+  namespace: poi
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mock-crm}
+  template:
+    metadata:
+      labels: {app: mock-crm}
+    spec:
+      containers:
+      - name: server
+        image: localhost:5000/poi-mock-servers:latest
+        imagePullPolicy: Always
+        env:
+        - {name: SERVER_MODULE, value: mock_crm_server}
+        - {name: HTTP_PORT, value: "8002"}
+        - {name: MCP_PORT,  value: "9002"}
+        ports:
+        - {containerPort: 8002, name: http}
+        - {containerPort: 9002, name: mcp}
+        livenessProbe:
+          httpGet: {path: /health, port: 8002}
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet: {path: /health, port: 8002}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits:   {cpu: 200m, memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-crm
+  namespace: poi
+spec:
+  selector: {app: mock-crm}
+  ports:
+  - {name: http, port: 8002, targetPort: 8002}
+  - {name: mcp,  port: 9002, targetPort: 9002}
