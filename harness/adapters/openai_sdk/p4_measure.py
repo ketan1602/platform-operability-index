@@ -1,6 +1,6 @@
 """P4 (Golden-Path Packageability) measurements for OpenAI Agents SDK F3.
 
-The SDK requires a valid OpenAI-compatible base_url and API key (AI Refinery).
+The SDK requires a valid OpenAI-compatible base_url and API key.
 No checkpoint concept — simpler Helm template than LangGraph.
 Non-standard base_url must be configured at deploy time (an env var).
 """

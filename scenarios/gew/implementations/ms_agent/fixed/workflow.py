@@ -4,9 +4,9 @@ Sequential agent execution — not a chat loop — to match the fixed DAG.
 AutoGen imports are deferred inside run_workflow() to keep harness imports clean.
 
 Env vars:
-  AIREFINERY_BASE_URL  — AI Refinery endpoint
-  AIREFINERY_API_KEY   — secret (injected via .env or Vault)
-  AIREFINERY_MODEL     — model name
+  LLM_BASE_URL / AIREFINERY_BASE_URL  — OpenAI-compatible endpoint
+  LLM_API_KEY / AIREFINERY_API_KEY   — secret (injected via .env or Vault)
+  LLM_MODEL / AIREFINERY_MODEL       — model name
   DRY_RUN              — if "true", agents return hardcoded dicts (no LLM)
 """
 from __future__ import annotations
@@ -41,16 +41,16 @@ _DRY_RUN_AUDIT = {"audit_id": "audit-dry-001", "status": "complete"}
 
 
 def _make_client():
-    """Return OpenAIChatCompletionClient pointed at AI Refinery, or None for dry-run."""
+    """Return OpenAIChatCompletionClient for the configured endpoint, or None for dry-run."""
     if _DRY_RUN:
         return None
     from autogen_ext.models.openai import OpenAIChatCompletionClient  # deferred
-    base_url = os.environ.get("AIREFINERY_BASE_URL", "")
-    api_key = os.environ.get("AIREFINERY_API_KEY", "")
-    model = os.environ.get("AIREFINERY_MODEL", "gpt-4o-mini")
+    base_url = os.environ.get("LLM_BASE_URL") or os.environ.get("AIREFINERY_BASE_URL", "")
+    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("AIREFINERY_API_KEY", "")
+    model = os.environ.get("MODEL_ID") or os.environ.get("AIREFINERY_MODEL", "gpt-4o-mini")
     if not base_url or not api_key:
         raise EnvironmentError(
-            "AIREFINERY_BASE_URL and AIREFINERY_API_KEY must be set "
+            "LLM_BASE_URL and LLM_API_KEY must be set "
             "(or set DRY_RUN=true for local testing)"
         )
     return OpenAIChatCompletionClient(model=model, base_url=base_url, api_key=api_key)

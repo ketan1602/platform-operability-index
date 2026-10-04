@@ -21,7 +21,7 @@ async function loadPreflight() {
   const missingFw = fws.filter(([, v]) => !v).map(([k]) => FRAMEWORKS[k]);
   $("preflight").replaceChildren(
     chip("LLM credentials", r.llm_env_missing.length ? "error" : "success",
-      r.llm_env_missing.length ? `Missing: ${r.llm_env_missing.join(", ")}` : "AI Refinery env vars set"),
+      r.llm_env_missing.length ? `Missing: ${r.llm_env_missing.join(", ")}` : "LLM env vars set"),
     chip(`Services ${up}/${mocks.length}`, up === mocks.length ? "success" : "error",
       mocks.map(([k, v]) => `${k}: ${v}`).join(" · ")),
     chip(`Frameworks ${installed}/${fws.length}`, installed === fws.length ? "success" : "warning",

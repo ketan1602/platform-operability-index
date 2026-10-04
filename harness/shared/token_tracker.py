@@ -7,7 +7,7 @@ across all trials. The patch is idempotent; installing twice has no effect.
 Strategy
 --------
 1. Intercept the outgoing request and inject ``stream_options.include_usage=True`` for
-   any streaming completion — AI Refinery only includes usage in SSE when asked.
+   any streaming completion — some providers only include usage in SSE when asked.
 2. For non-streaming responses (already buffered by httpx): read usage from _content.
 3. For streaming responses: wrap response.stream so every chunk is captured; extract
    usage from the accumulated SSE after the stream exhausts.

@@ -107,16 +107,15 @@ MODEL_ID=claude-sonnet-4-5
 
 > Anthropic's API uses different request/response shapes from OpenAI. The harness LLM client detects `anthropic.com` in `LLM_BASE_URL` and switches to the `anthropic` SDK path automatically.
 
-#### Option C — AI Refinery (Accenture internal)
+#### Option C — Self-hosted OpenAI-compatible endpoint
 
 ```bash
-LLM_BASE_URL=https://<your-refinery-host>/v1
-LLM_API_KEY=<airefinery-key>
+LLM_BASE_URL=https://<your-endpoint-host>/v1
+LLM_API_KEY=<your-api-key>
 MODEL_ID=openai/gpt-oss-120b
-AIREFINERY_SDK_VERSION=2          # optional — defaults to 2
 ```
 
-AI Refinery exposes an OpenAI-compatible `/v1/chat/completions` endpoint, so no special handling is needed beyond the three standard variables.
+Any endpoint that speaks the OpenAI `/v1/chat/completions` protocol works here — LiteLLM proxy, Azure OpenAI, a corporate gateway, or any self-hosted model server. No special handling is needed beyond the three standard variables.
 
 #### Option D — Any OpenAI-compatible endpoint (Ollama, Azure OpenAI, LiteLLM proxy, etc.)
 
@@ -239,7 +238,7 @@ We use a 0–3 ordinal scale per pillar because the differences that matter in p
 
 ### Live LLM, repeated, median, weakest link
 
-All measured scenarios run against a live LLM (AI Refinery, `openai/gpt-oss-120b`, the same model for every framework). Each framework × scenario is run **5 times**:
+All measured scenarios run against a live LLM (`openai/gpt-oss-120b`, the same model for every framework). Each framework × scenario is run **5 times**:
 
 - **Within a scenario:** the pillar score is the **median** of the repeats (lower median, so scores stay whole numbers). The range is reported next to it.
 - **Across scenarios:** a pillar takes the **minimum**. Operability fails at its weakest link.

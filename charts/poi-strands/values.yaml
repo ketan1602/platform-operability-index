@@ -16,7 +16,7 @@ agent:
 
 llm:
   base_url: ""
-  api_key_secret_name: "airefinery-creds"
+  api_key_secret_name: "llm-creds"
   api_key: ""
 
 otel:

@@ -2,7 +2,7 @@
   {{- fail "agent.image is required." -}}
 {{- end -}}
 {{- if not .Values.litellm.base_url -}}
-  {{- fail "litellm.base_url is required (AI Refinery / LiteLLM endpoint)." -}}
+  {{- fail "litellm.base_url is required (LiteLLM or OpenAI-compatible endpoint)." -}}
 {{- end -}}
 {{- if not .Values.otel.endpoint -}}
   {{- fail "otel.endpoint is required." -}}

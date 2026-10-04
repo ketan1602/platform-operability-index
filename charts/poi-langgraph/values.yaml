@@ -1,6 +1,6 @@
 # POI LangGraph Helm Chart — Default Values
 # Required values are left empty ("") — Helm will fail-fast if not supplied.
-# Supply secrets at install time: helm install ... --set llm.api_key=$AIREFINERY_API_KEY
+# Supply secrets at install time: helm install ... --set llm.api_key=$LLM_API_KEY
 # Never hardcode secrets here.
 
 agent:
@@ -23,8 +23,8 @@ otel:
   endpoint: ""            # required: http://otel-collector.poi-monitoring:4317
 
 llm:
-  api_key_secret_name: "airefinery-creds"   # name of K8s Secret that holds api_key
-  api_key: ""             # required at install: --set llm.api_key=$AIREFINERY_API_KEY
+  api_key_secret_name: "llm-creds"   # name of K8s Secret that holds api_key
+  api_key: ""             # required at install: --set llm.api_key=$LLM_API_KEY
                           # never commit a real value here
 
 tenant:

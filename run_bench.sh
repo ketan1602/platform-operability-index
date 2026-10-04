@@ -9,12 +9,12 @@ cd "$SCRIPT_DIR"
 if [[ -f ".env" ]];       then set -a; source ".env";       set +a; fi
 if [[ -f ".env.infra" ]]; then set -a; source ".env.infra"; set +a; fi
 
-# Accept either the generic names (preferred) or the legacy AI Refinery names.
+# Accept either the generic names (preferred) or the legacy AIREFINERY_* alias names.
 _api_key="${LLM_API_KEY:-${AIREFINERY_API_KEY:-}}"
 _base_url="${LLM_BASE_URL:-${AIREFINERY_BASE_URL:-}}"
 
 if [[ -z "$_api_key" ]]; then
-  echo "ERROR: LLM_API_KEY must be set (see .env.example for OpenAI, Anthropic, and AI Refinery examples)" >&2
+  echo "ERROR: LLM_API_KEY must be set (see .env.example for OpenAI, Anthropic, and self-hosted endpoint examples)" >&2
   exit 1
 fi
 if [[ -z "$_base_url" ]]; then

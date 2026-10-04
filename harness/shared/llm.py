@@ -2,8 +2,8 @@
 
 Priority order for configuration:
   1. Generic vars: LLM_BASE_URL, LLM_API_KEY, MODEL_ID  (preferred; works with any provider)
-  2. AI Refinery legacy vars: AIREFINERY_BASE_URL, AIREFINERY_API_KEY, AIREFINERY_MODEL
-     (backwards-compat for Accenture-internal users)
+  2. Legacy alias vars: AIREFINERY_BASE_URL, AIREFINERY_API_KEY, AIREFINERY_MODEL
+     (backwards-compat; accepted as fallback when the generic vars are absent)
 
 All optional-dependency imports (air, langchain_openai, openai) are deferred
 inside function bodies so the harness core works without them installed.
@@ -27,7 +27,7 @@ def _require_api_key() -> str:
     if not key:
         raise RuntimeError(
             "LLM_API_KEY must be set. "
-            "See .env.example for OpenAI, Anthropic, and AI Refinery examples."
+            "See .env.example for OpenAI, Anthropic, and self-hosted endpoint examples."
         )
     return key
 
@@ -59,7 +59,7 @@ def _is_anthropic() -> bool:
 
 
 def _extra_headers() -> dict:
-    """Return any provider-specific headers (e.g. AI Refinery sdk_version)."""
+    """Return any provider-specific headers (e.g. sdk_version for enterprise LLM gateways)."""
     version = os.environ.get("AIREFINERY_SDK_VERSION", "")
     if version:
         return {"sdk_version": version}
@@ -67,7 +67,7 @@ def _extra_headers() -> dict:
 
 
 def get_air_client():
-    """AI Refinery native client (Accenture-internal only)."""
+    """Native AIRefinery SDK client (requires airefinery-sdk extra)."""
     from air import AIRefinery  # noqa: PLC0415
     return AIRefinery(api_key=_require_api_key())
 
@@ -166,7 +166,7 @@ def openai_compat() -> dict:
     """Settings every framework needs to reach the configured OpenAI-compatible API.
 
     Returns base_url, api_key, model, and any provider-specific headers.
-    AI Refinery users: AIREFINERY_SDK_VERSION is picked up automatically via _extra_headers().
+    AIREFINERY_SDK_VERSION (if set) is forwarded automatically via _extra_headers().
     """
     return {
         "base_url": _require_base_url(),

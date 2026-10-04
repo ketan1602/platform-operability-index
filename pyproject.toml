@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.30", "langchain-anthropic>=0.3"]
-airefinery = ["airefinery-sdk"]
+enterprise-llm = ["airefinery-sdk"]
 
 [project.scripts]
 poi-run = "harness.runner:main"

@@ -4,7 +4,7 @@ Strands Agents ships with built-in OpenTelemetry support.  Setting
 OTEL_EXPORTER_OTLP_ENDPOINT is sufficient to start emitting spans.
 The gen_ai.* semantic conventions are emitted for operation name and provider.
 Token usage attributes require the model to return usage metadata (works with
-AI Refinery's OpenAI-compatible API).
+any OpenAI-compatible API that includes usage in its response).
 """
 from __future__ import annotations
 import os

@@ -21,7 +21,7 @@ otel:
   endpoint: ""
 
 llm:
-  api_key_secret_name: "airefinery-creds"
+  api_key_secret_name: "llm-creds"
   api_key: ""
 
 tenant:

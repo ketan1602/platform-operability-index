@@ -2,7 +2,7 @@
   {{- fail "agent.image is required." -}}
 {{- end -}}
 {{- if not .Values.llm.base_url -}}
-  {{- fail "llm.base_url is required (AI Refinery base URL)." -}}
+  {{- fail "llm.base_url is required (OpenAI-compatible endpoint, e.g. https://api.openai.com/v1)." -}}
 {{- end -}}
 {{- if not .Values.otel.endpoint -}}
   {{- fail "otel.endpoint is required." -}}

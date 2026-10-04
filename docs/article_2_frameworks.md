@@ -54,7 +54,7 @@ The sum across all nine pillars is the **POI score** (0–27 for the extended be
 - Python 3.11+ (required for the harness runner and all framework adapters)
 - Docker Desktop or OrbStack (backing services)
 - `kubectl` pointed at a local cluster (OrbStack / minikube / kind)
-- Anthropic API key or AI Refinery endpoint (for live LLM runs)
+- Anthropic API key or OpenAI-compatible endpoint (for live LLM runs)
 
 Framework dependencies conflict: LangGraph, AutoGen, OpenAI SDK, Google ADK, and Strands each require different versions of Pydantic, OpenTelemetry, and other shared libraries. The harness isolates each framework in its own virtual environment.
 
@@ -89,8 +89,8 @@ LLM_BASE_URL=https://api.anthropic.com/v1
 LLM_API_KEY=sk-ant-...
 MODEL_ID=claude-sonnet-4-5
 
-# AI Refinery (Accenture internal — OpenAI-compatible)
-LLM_BASE_URL=https://<refinery-host>/v1
+# Self-hosted OpenAI-compatible endpoint (LiteLLM proxy, corporate gateway, etc.)
+LLM_BASE_URL=https://<your-endpoint>/v1
 LLM_API_KEY=<key>
 MODEL_ID=openai/gpt-oss-120b
 
@@ -588,7 +588,7 @@ Full live run: 225 combinations (5 frameworks × 9 scenarios × 5 repeats). 219 
 |---|---|---|---|---|
 | F2 AutoGen | AHQ | r3 | Transport indicated EOF | Subprocess pipe dropped under macOS memory pressure |
 | F3 OpenAI SDK | AHQ | r0 | AMQPConnectionError | RabbitMQ pod momentarily unreachable on cold start |
-| F4 Google ADK | RLC | r1, r3 | InternalServerError: gpt-oss-120b | AI Refinery LLM backend transient (model serving restart) |
+| F4 Google ADK | RLC | r1, r3 | InternalServerError: gpt-oss-120b | LLM backend transient error (model serving restart) |
 | F4 Google ADK | AHQ | r4 | BrokenPipeError | Same subprocess pipe issue as F2 AHQ |
 | F5 Strands | AHQ | r1 | AMQPConnectionError | Same RabbitMQ cold-start transient as F3 |
 
