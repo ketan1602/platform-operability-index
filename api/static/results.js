@@ -87,7 +87,7 @@ function evidenceText(cell) {
 }
 
 function renderEvidence(r) {
-  const evidencePillars = ["p1", "p2", "p3", "p6", "p7", "p8"];
+  const evidencePillars = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9"];
   const head = el("tr", {}, [el("th", { text: "Framework" }),
     ...evidencePillars.map((p) => el("th", { text: PILLAR_LABELS[p] }))]);
   const rows = r.ranking.map((fid) => el("tr", {}, [
