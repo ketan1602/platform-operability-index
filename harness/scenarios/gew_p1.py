@@ -44,6 +44,20 @@ def _resume_twice(fw: str, run_id: str, wd, path) -> list[child.Outcome]:
 
 
 def measure(fw: str) -> dict:
+    if fw != "F1":
+        # SIGKILL+Postgres checkpoint resume is LangGraph-native (interrupt_after + PostgresSaver).
+        # Other frameworks lack this capability — score 0, not inconclusive.
+        return {
+            "notes": f"GEW P1 checkpoint/resume not natively supported by {fw}; capability absent → score 0",
+            "p1": P1Measurements(
+                resume_succeeded=False,
+                state_intact_after_kill=False,
+                side_effect_executions=0,
+                concurrent_resume_collision="not_prevented",
+                custom_code_lines_to_reach_score_3=0,
+                checkpoint_backend="none",
+            ),
+        }
     run_id, wd = uuid.uuid4().hex[:12], workdir("GEW-P1")
     path = wd / "ledger.jsonl"
     paused, _pid_a = _pause(fw, run_id, wd)

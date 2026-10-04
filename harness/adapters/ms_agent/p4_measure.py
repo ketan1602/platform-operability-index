@@ -9,9 +9,16 @@ from pathlib import Path
 
 import structlog
 
-from harness.shared.pillar_models import P4Measurements
+from harness.adapters.shared.k8s_fit import test_lazy_init, test_sigterm
+from harness.scenarios.dx_extras import count_hitl_loc, run_hitl
+from harness.shared.p4_chart import probe_chart_hacks
+
+_FW_ID = "F2"
+from harness.shared.pillar_models import HackRecord, P4Measurements
 
 log = structlog.get_logger(__name__)
+
+_CORE_MODULE = "autogen_agentchat"
 
 _CHART_DIR = (
     Path(__file__).parent.parent.parent.parent / "charts" / "poi-ms-agent"
@@ -31,11 +38,22 @@ def _count_template_loc() -> int:
 
 def measure_p4() -> P4Measurements:
     template_loc = _count_template_loc()
+    hitl_works, hitl_gate_ms = run_hitl(_FW_ID)
     hacks = [
-        "max_turns must be set per-agent; no cluster-wide policy primitive for this",
-        "autogen-ext[opentelemetry] must be pip-installed separately in image",
+        HackRecord(
+            description="max_turns must be set per-agent; no cluster-wide policy primitive for this",
+            cost_hrs=0.5, recurring_hrs_per_yr=0.5,
+        ),
+        HackRecord(
+            description="autogen-ext[opentelemetry] must be pip-installed separately in image",
+            cost_hrs=1.0, recurring_hrs_per_yr=0.5, upgrade_sensitive=True,
+        ),
     ]
-    log.info("p4.measured", framework="F2", template_loc=template_loc)
+    lazy_s, lazy_ms = test_lazy_init(_CORE_MODULE)
+    sigterm_ok, sigterm_ms = test_sigterm(_CORE_MODULE)
+    pod_hacks = probe_chart_hacks(_CHART_DIR)
+    log.info("p4.measured", framework="F2", template_loc=template_loc,
+             lazy_init_s=lazy_s, sigterm_graceful=sigterm_ok, pod_hacks=pod_hacks)
     return P4Measurements(
         template_loc=template_loc,
         framework_specific_hacks_required=hacks,
@@ -43,4 +61,13 @@ def measure_p4() -> P4Measurements:
         required_framework_internal_hooks=[],
         one_day_deployment_achieved=True,
         blockers_encountered=[],
+        lazy_init_s=lazy_s,
+        lazy_init_ms=lazy_ms,
+        sigterm_graceful=sigterm_ok,
+        sigterm_latency_ms=sigterm_ms,
+        hitl_gate_loc=count_hitl_loc(_FW_ID),
+        hitl_gate_latency_ms=hitl_gate_ms,
+        hitl_native=False,
+        hitl_verified=hitl_works,
+        hacks_detected_in_pod=pod_hacks,
     )

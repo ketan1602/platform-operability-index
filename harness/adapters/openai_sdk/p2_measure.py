@@ -6,19 +6,26 @@ to call the tool again (non-deterministic) or the OpenAI API budget is hit.
 The framework provides no native kill switch for local execution.
 """
 from __future__ import annotations
+from pathlib import Path
+
 import structlog
+
+from harness.shared import custom_loc
 from harness.shared.pillar_models import P2Measurements
 
 log = structlog.get_logger(__name__)
 
+_SHIM_PY = Path(__file__).parent / "isolation_shim.py"
+
 
 def measure_p2() -> P2Measurements:
+    isolation_loc = custom_loc.count(_SHIM_PY)
     log.info(
         "p2.measured",
         framework="F3",
         contained=False,
         kill_switch="no_mechanism",
-        note="max_turns not enforced by default; requires explicit Runner(max_turns=N)",
+        isolation_loc=isolation_loc,
     )
     return P2Measurements(
         runaway_loop_contained_by_default=False,
@@ -26,6 +33,7 @@ def measure_p2() -> P2Measurements:
         credential_bleed_events=0,
         kill_switch_type="no_mechanism",
         halt_latency_ms=None,
+        halt_signal=None,
         isolation_requires_custom_code=True,
-        custom_code_lines_for_isolation=3,
+        custom_code_lines_for_isolation=isolation_loc,
     )

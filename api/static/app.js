@@ -120,4 +120,4 @@ renderFrameworkChecks();
 document.querySelectorAll("#fw-checks input").forEach((i) => i.addEventListener("change", updateCount));
 updateCount();
 loadPreflight();
-loadResults();
+loadRunList().then(loadResults);

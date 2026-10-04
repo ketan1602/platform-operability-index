@@ -17,6 +17,9 @@ COPY scenarios/gew/mock_infrastructure/approval_server.py .
 COPY scenarios/tcw/mock_infrastructure/ml_endpoint.py .
 COPY scenarios/tcw/mock_infrastructure/channel_adapter.py .
 
+# SEC mock auth server — HTTP credential bleed probe
+COPY k8s/mock-servers/mock_auth_server.py .
+
 # Process runner — starts both HTTP and MCP server
 COPY k8s/mock-servers/runner.py .
 

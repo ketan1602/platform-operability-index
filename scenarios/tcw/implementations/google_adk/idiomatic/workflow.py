@@ -63,11 +63,11 @@ async def _run_adk(workflow_id: str, customer_id: str) -> dict:
     from google.adk.sessions import InMemorySessionService
     from google.adk.runners import Runner
     from google.genai import types
+    from harness.frameworks.adk_llm import llm
 
-    mid = f"litellm/{os.environ.get('AIREFINERY_MODEL_ID', 'gpt-4o-mini')}"
     root = LlmAgent(
         name="TCWAutonomousAgent",
-        model=mid,
+        model=llm(),
         tools=_all_tools(),
         instruction=(
             "Execute all 5 TCW steps using the tools in order: "

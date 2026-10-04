@@ -66,6 +66,7 @@ MOCK_CRM_URL=http://127.0.0.1:8002
 APPROVAL_URL=http://127.0.0.1:8003
 ML_ENDPOINT_URL=http://127.0.0.1:8102
 CHANNEL_ADAPTER_URL=http://127.0.0.1:8103
+MOCK_AUTH_URL=http://127.0.0.1:8005
 MOCK_API_MCP_URL=http://127.0.0.1:9001/mcp
 MOCK_CRM_MCP_URL=http://127.0.0.1:9002/mcp
 MOCK_APPROVAL_MCP_URL=http://127.0.0.1:9003/mcp
@@ -110,11 +111,13 @@ up() {
   pf pf-mock-approval poi  mock-approval   "8003:8003 9003:9003"
   pf pf-mock-ml       poi  ml-endpoint     "8102:8102 9102:9102"
   pf pf-mock-channel  poi  channel-adapter "8103:8103 9103:9103"
+  pf pf-mock-auth     poi  mock-auth       "8005:8005 9005:9005"
 
   wait_port "$PG_PORT" pf-postgres; wait_port "$NEO4J_PORT" pf-neo4j
   wait_port "$AMQP_PORT" pf-rabbitmq; wait_port "$OTLP_PORT" pf-otlp
   wait_port "$JAEGER_UI_PORT" pf-jaeger
   for p in 8001 8002 8003 8102 8103; do wait_port "$p" "pf-mock-${p}"; done
+  wait_port 8005 pf-mock-auth
 
   ensure_database
   write_env

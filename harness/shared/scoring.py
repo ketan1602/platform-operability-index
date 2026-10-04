@@ -6,7 +6,7 @@ returns an integer 0–3.  No side-effects, no I/O.
 from __future__ import annotations
 from typing import Optional
 
-from harness.shared import scoring_v2
+from harness.shared import scoring_v2, scoring_ops
 from harness.shared.pillar_models import (
     P1Measurements,
     P2Measurements,
@@ -16,6 +16,7 @@ from harness.shared.pillar_models import (
     P6Measurements,
     P7Measurements,
     P8Measurements,
+    P9Measurements,
 )
 
 
@@ -92,21 +93,42 @@ def score_p4(m: P4Measurements) -> int:
       template_loc      — counted by _count_template_loc() in each p4_measure.py
       framework_specific_hacks_required — documented list in each p4_measure.py
       policy_authorable_without_framework_internals — boolean desk-check
-    Self-reported time fields (template_creation_time_hrs, deployment_time_hrs)
-    are not scored; they may appear in raw data for reference only.
+    K8s fit sub-tests:
+      sigterm_graceful=False caps score at 1.
+      lazy_init_s > 5.0 caps score at 2.
+    Self-reported time fields are not scored; they appear in raw data for reference only.
     """
     if not m.one_day_deployment_achieved:
         return 0
+
+    if m.sigterm_graceful is False:
+        return 1
 
     loc = m.template_loc or 0
     if loc > 200:
         return 1
 
     hacks = m.framework_specific_hacks_required or []
+    hack_cost = sum(h.cost_hrs for h in hacks)
     if not hacks and m.policy_authorable_without_framework_internals:
-        return 3
+        raw = 3
+    elif hack_cost <= 4.0:
+        raw = 2
+    else:
+        raw = 1
 
-    return 2
+    if (m.lazy_init_s is not None) and (m.lazy_init_s < 0 or m.lazy_init_s > 5.0):
+        return min(raw, 2)
+
+    if m.hitl_verified is False:
+        return min(raw, 1)
+
+    if m.hitl_native is True and m.hitl_verified is True:
+        raw = min(raw + 1, 3)
+    elif m.hitl_gate_loc is not None and m.hitl_native is False and m.hitl_gate_loc > 15:
+        raw = min(raw, 2)
+
+    return raw
 
 
 def score_p6(m: P6Measurements) -> int:
@@ -124,32 +146,17 @@ def score_p8(m: P8Measurements) -> int:
     return scoring_v2.p8_from_security(m)
 
 
+def score_p9(m: P9Measurements) -> int:
+    """P9 — Ops Experience (FinOps + Runtime + Fleet management)."""
+    return scoring_ops.p9_from_ops(m)
+
+
 def score_p5(m: P5Measurements) -> int:
-    """P5 — Day-2 Migration Fragility (inverted: higher = less fragile).
-
-    Scores are derived from two reproducible inputs:
-      changelog_breaking_changes_per_release_avg — desk research on changelog
-      checkpoint_migration_required              — boolean from changelog
-
-    estimated_fleet_upgrade_hrs_per_release_cycle is intentionally excluded
-    from scoring: it is a self-reported estimate that cannot be independently
-    reproduced.  The field harness_upgrade_observed_hrs (populated when an
-    actual N→N+1 harness upgrade is performed) will replace it in a future
-    measurement cycle.
+    """P5 — Day-2 Migration Fragility (higher = less fragile).
+    Empirically probed: upgrade package in venv, re-run DRY_RUN scenarios, diff results.
     """
-    avg = m.changelog_breaking_changes_per_release_avg
-    migr = m.checkpoint_migration_required
-
-    if avg is None:
-        return 0
-
-    if avg > 5:
-        return 0
-
-    if avg < 1 and not migr:
+    if m.harness_failures_after_upgrade == 0 and not m.checkpoint_migration_required:
         return 3
-
-    if avg <= 2 and not migr:
-        return 2
-
-    return 1
+    if m.checkpoint_migration_required or m.harness_failures_after_upgrade >= 3:
+        return 1
+    return 2

@@ -23,6 +23,22 @@ from harness.shared.child_entry import RESULT_PREFIX
 
 _REPO = Path(__file__).resolve().parents[2]
 
+# Tracks all grandchild ledger paths registered during one measure() call so
+# base_adapter can aggregate token counts across all trials.
+_ledger_registry: list[Path] = []
+
+
+def reset_ledger_registry() -> None:
+    _ledger_registry.clear()
+
+
+def collect_tokens() -> dict:
+    """Sum llm_usage entries across every ledger registered since the last reset."""
+    all_entries: list = []
+    for path in _ledger_registry:
+        all_entries.extend(ledger.read(path))
+    return ledger.sum_tokens(all_entries)
+
 
 @dataclass
 class Outcome:
@@ -32,6 +48,7 @@ class Outcome:
 
 
 def spawn(target: str, kwargs: dict, ledger_path: Path, env: Optional[dict] = None) -> subprocess.Popen:
+    _ledger_registry.append(ledger_path)
     child_env = {**os.environ, **(env or {}), ledger.LEDGER_ENV: str(ledger_path), "PYTHONUNBUFFERED": "1"}
     log_file = open(ledger_path.with_suffix(f".{target.split(':')[1]}.{time.time_ns()}.log"), "w")
     return subprocess.Popen(

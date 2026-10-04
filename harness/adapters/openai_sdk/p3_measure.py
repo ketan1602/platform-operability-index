@@ -7,9 +7,11 @@ gen_ai.usage.* attributes are present on non-streaming completions.
 """
 from __future__ import annotations
 import os
+from pathlib import Path
 
 import structlog
 
+from harness.shared import custom_loc
 from harness.shared.otel_probe import (
     REQUIRED_OTEL_ATTRIBUTES,
     get_emitted_attributes,
@@ -19,7 +21,6 @@ from harness.shared.pillar_models import P3Measurements
 
 log = structlog.get_logger(__name__)
 
-_EXPORTER_LOC = 8
 _KNOWN_MISSING: list[str] = []
 
 
@@ -40,14 +41,15 @@ def measure_p3(run_id: str = "p3-probe-f3") -> P3Measurements:
         missing = _KNOWN_MISSING
         emitted = list(REQUIRED_OTEL_ATTRIBUTES)
 
-    log.info("p3.measured", framework="F3", emitted=emitted, missing=missing)
+    loc = custom_loc.count(Path(__file__).parent / "tracing_shim.py")
+    log.info("p3.measured", framework="F3", emitted=emitted, missing=missing, exporter_loc=loc)
     return P3Measurements(
         required_attributes_emitted_by_default=emitted,
         missing_required_attributes=missing,
         alert_fired_without_custom_code=False,
         alert_latency_ms=None,
-        custom_exporter_required=True,
-        custom_exporter_loc=_EXPORTER_LOC,
+        custom_exporter_required=loc > 0,
+        custom_exporter_loc=loc,
         proprietary_backend_required=False,
         oss_stack_viable=True,
     )

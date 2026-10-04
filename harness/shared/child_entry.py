@@ -28,6 +28,8 @@ def _call(target: str, kwargs: dict) -> dict:
 
 
 def main() -> None:
+    from harness.shared import token_tracker
+    token_tracker.install()
     target, raw = sys.argv[1], sys.argv[2]
     try:
         result = _call(target, json.loads(raw))

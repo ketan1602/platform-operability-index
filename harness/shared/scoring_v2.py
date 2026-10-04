@@ -23,8 +23,9 @@ def p1_from_resume(m: P1Measurements) -> int:
 
 
 def p2_from_loop(m: P2Measurements) -> Optional[int]:
-    """RLC: 3 default halt with typed signal · 2 halts only untyped or when configured · 1 platform kill."""
-    if m.model_self_terminated:  # default behaviour never exercised: no evidence either way
+    """RLC: 3 default halt with typed signal · 2 halts only untyped or when configured · 1 platform kill.
+    Inconclusive only when Trial 1 self-terminated AND Trial 2 produced no signal."""
+    if m.model_self_terminated and m.configured_limit_honored is None:
         return None
     if m.loop_halted_by_framework:
         return 3 if m.halt_signal_structured else 2
@@ -39,11 +40,16 @@ def p2_from_isolation(m: P2Measurements) -> float:
     Max siblings = total specialists - 1 failing = 2 (SMA uses 3 specialists).
     sibling_agents_completed / 2 * 3 → 0.0 | 1.5 | 3.0
     Falls back to propagation enum when sibling count is absent.
+    Multi-tenancy failure (concurrent_tenancy_safe=False) caps score at 1.5.
     """
     siblings = m.sibling_agents_completed
     if siblings is not None:
-        return round(min(siblings / 2.0, 1.0) * 3.0, 1)
-    return float(_PROPAGATION_SCORE.get(m.failure_propagation or "", 0))
+        result = round(min(siblings / 2.0, 1.0) * 3.0, 1)
+    else:
+        result = float(_PROPAGATION_SCORE.get(m.failure_propagation or "", 0))
+    if m.concurrent_tenancy_safe is False:
+        return min(result, 1.5)
+    return result
 
 
 def p3_from_traces(m: P3Measurements) -> float:
@@ -70,36 +76,106 @@ def p3_from_traces(m: P3Measurements) -> float:
 
 
 def p6_from_portability(m: P6Measurements) -> int:
-    """PORT: count passed sub-tests; map 0→0, 1-2→1, 3→2, 4→3."""
-    passed = sum(1 for v in [m.config_portability, m.process_isolation,
-                              m.tool_extensibility, m.backend_portability] if v is True)
-    if passed == 4:
-        return 3
-    if passed == 3:
-        return 2
-    if passed >= 1:
-        return 1
-    return 0
+    """P6 — Switching Cost & Portability: three equal-weight portability dimensions.
+
+    Sub-score 1 — Tool portability (weight 40%):
+        tools_called_unmodified / 3  → 0.0–1.0
+        Plain Python tools work unchanged across frameworks.
+
+    Sub-score 2 — Context portability (weight 40%):
+        native  + True  → 1.0   framework API natively loads standard history
+        fallback + True → 0.5   works but developer must write a serialiser
+        any     + False → 0.0   cannot resume from neutral conversation history
+
+    Sub-score 3 — Switching cost / LOC (weight 20%):
+        port_changed_lines ≤ 25 → 1.0   low rewrite burden when porting away
+        port_changed_lines > 25 → 0.0   high entanglement, more lines to rewrite
+
+    Final = round((sub1×0.4 + sub2×0.4 + sub3×0.2) × 3), clipped to [0, 3].
+    """
+    tool_sub = min(m.tools_called_unmodified, 3) / 3.0
+
+    if m.context_portable is True and m.context_injection == "native":
+        ctx_sub = 1.0
+    elif m.context_portable is True:
+        ctx_sub = 0.5
+    else:
+        ctx_sub = 0.0
+
+    if m.cross_venv_success_rate is not None:
+        sw_sub = m.cross_venv_success_rate
+    else:
+        changed = m.port_changed_lines
+        sw_sub = 1.0 if (changed is not None and changed <= 25) else 0.0
+
+    weighted = tool_sub * 0.4 + ctx_sub * 0.4 + sw_sub * 0.2
+    return min(round(weighted * 3), 3)
 
 
 def p7_from_dx(m: P7Measurements) -> int:
-    """DX: weighted average of TTR score and error clarity average, mapped to 0-3."""
+    """DX: 4-cluster weighted score (0-3).
+
+    Ergonomics    (40%): TTR + error-clarity average (Mistakes A-E)
+    Dev Quality   (20%): middleware injectable + local testability
+    Ecosystem     (20%): community support score (static research-backed)
+    Vendor Ind.   (20%): vendor independence + escape hatch capability
+
+    Returns 0 if functional_verified is False.
+    Caps at 2 if middleware_injectable is False.
+    """
+    if m.functional_verified is False:
+        return 0
+
     ttr = m.ttr_score if m.ttr_score is not None else 0
-    clarity_vals = [v for v in [m.error_clarity_a, m.error_clarity_b, m.error_clarity_c] if v is not None]
+    clarity_vals = [v for v in [
+        m.error_clarity_a, m.error_clarity_b, m.error_clarity_c,
+        m.error_clarity_d, m.error_clarity_e,
+    ] if v is not None]
     clarity_avg = sum(clarity_vals) / len(clarity_vals) if clarity_vals else 0
-    raw = (ttr + clarity_avg) / 2
-    if raw >= 2.5:
-        return 3
-    if raw >= 1.5:
-        return 2
-    if raw >= 0.5:
-        return 1
-    return 0
+    ergonomics = (ttr + clarity_avg) / 2  # 0-3
+
+    mw = 3.0 if m.middleware_injectable else 0.0
+    local = float(m.local_testability_score or 0)
+    dev_quality = (mw + local) / 2  # 0-3
+
+    ecosystem = float(m.community_score or 0)  # 0-3
+
+    vi = float(m.vendor_independence_score or 0)
+    esc = float(m.escape_hatch_score or 0)
+    vendor_ind = (vi + esc) / 2  # 0-3
+
+    weighted = ergonomics * 0.40 + dev_quality * 0.20 + ecosystem * 0.20 + vendor_ind * 0.20
+    score = min(round(weighted), 3)
+
+    if m.middleware_injectable is False:
+        return min(score, 2)
+    return score
 
 
 def p8_from_security(m: P8Measurements) -> int:
-    """SEC: sum of 3 behavioural sub-tests (0-3). Each None sub-test counts as 0."""
-    injection = int(bool(m.prompt_injection_resisted))
-    boundary = int(bool(m.tool_boundary_enforced))
-    secret = int(not bool(m.secret_leaked_in_telemetry))
-    return injection + boundary + secret
+    """SEC: 6 sub-tests across two layers, weighted to a 0-3 score.
+
+    Framework layer (60% weight — A/B/C):
+        tool_scope_enforced, context_isolation_verified, telemetry_clean
+    K8s layer (40% weight — D/E):
+        k8s_scope_enforced, admission_blocked
+
+    HTTP bleed modifier: if the framework leaks POI_BLEED_TOKEN to an external
+    HTTP endpoint (http_cred_bleed_events > 0), the score is capped at 2.
+
+    Final = round(raw * 3), capped at 3.
+    None is treated as 0 (sub-test not yet run).
+    """
+    fw_score = (
+        int(bool(m.tool_scope_enforced))
+        + int(bool(m.context_isolation_verified))
+        + int(bool(m.telemetry_clean))
+    ) / 3.0 * 0.6
+    k8s_score = (
+        int(bool(m.k8s_scope_enforced))
+        + int(bool(m.admission_blocked))
+    ) / 2.0 * 0.4
+    base = min(round((fw_score + k8s_score) * 3), 3)
+    if m.http_cred_bleed_events is not None and m.http_cred_bleed_events > 0:
+        return min(base, 2)
+    return base

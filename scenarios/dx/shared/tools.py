@@ -28,3 +28,23 @@ def broken_missing_arg() -> str:
 def broken_noop(x: str) -> str:
     """Placeholder for Mistake C (LLM init error); the tool itself is fine."""
     return f"noop: {x}"
+
+
+def broken_return_none(x: str) -> str:
+    """Intentionally returns None instead of declared str — Mistake D."""
+    return None  # type: ignore[return-value]
+
+
+def broken_wrong_annotation(city: int) -> str:
+    """Wrong type annotation: city declared int but callers pass str — Mistake E."""
+    return f"weather for {city}"
+
+
+TASK_SMOKE = "Use the greet tool to greet someone named 'poi-smoke-ok' and tell me what it said."
+
+
+def greet(name: str) -> str:
+    """Greet a user by name. Used for the smoke/functional-verification sub-test."""
+    from harness.shared import ledger
+    ledger.record("dx_smoke", name=name)
+    return f"Hello, {name}!"

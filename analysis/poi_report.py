@@ -10,7 +10,10 @@ Usage:
 """
 from __future__ import annotations
 import argparse
+import re
 import sys
+from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 import structlog
@@ -24,7 +27,7 @@ from analysis.sensitivity import compute_sensitivity  # noqa: E402
 
 log = structlog.get_logger(__name__)
 _DEFAULT_RESULTS = _SCRIPT_DIR.parent / "results" / "runs"
-_PILLARS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]
+_PILLARS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9"]
 _SKIP = {"summary.yaml"}
 _FW_NAMES = {
     "F1": "LangGraph",
@@ -35,10 +38,14 @@ _FW_NAMES = {
 }
 
 
-def _load(results_dir: Path) -> list:
+_RUN_TS_RE = re.compile(r"^\d{8}T\d{6}Z")
+
+
+def _load(results_dir: Path, run: str | None = None) -> list:
     from harness.shared.measurement import RunResult
+    pattern = f"{run}_*.yaml" if run else "*.yaml"
     records = []
-    for f in sorted(results_dir.glob("**/*.yaml")):
+    for f in sorted(results_dir.glob(pattern)):
         if f.name in _SKIP:
             continue
         try:
@@ -46,6 +53,24 @@ def _load(results_dir: Path) -> list:
         except Exception as exc:
             log.warning("result_parse_failed", file=f.name, error=str(exc))
     return records
+
+
+def list_runs(results_dir: Path) -> list[dict]:
+    """Return run batches newest-first: [{id, label, file_count}]."""
+    counts: dict[str, int] = defaultdict(int)
+    for f in results_dir.glob("*.yaml"):
+        m = _RUN_TS_RE.match(f.name)
+        if m:
+            counts[m.group(0)] += 1
+    def _label(ts: str) -> str:
+        try:
+            return datetime.strptime(ts, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d %H:%M UTC")
+        except ValueError:
+            return ts
+    return sorted(
+        [{"id": k, "label": _label(k), "file_count": v} for k, v in counts.items()],
+        key=lambda x: x["id"], reverse=True,
+    )
 
 
 def _score_matrix(agg: dict) -> dict[str, dict]:
@@ -57,9 +82,9 @@ def _ot_table(agg: dict) -> dict[str, int]:
 
 
 def _print_score_matrix(matrix: dict) -> None:
-    header = f"{'Framework':<18} {'P1':>4} {'P2':>4} {'P3':>4} {'P4':>4} {'P5':>4} {'P6':>4} {'P7':>4} {'P8':>4} {'POI':>5}"
+    header = f"{'Framework':<18} {'P1':>4} {'P2':>4} {'P3':>4} {'P4':>4} {'P5':>4} {'P6':>4} {'P7':>4} {'P8':>4} {'P9':>4} {'POI':>5}"
     sep    = "-" * len(header)
-    print("\n=== POI Score Matrix (0–3 per pillar, max 24) ===")
+    print("\n=== POI Score Matrix (0–3 per pillar, max 27) ===")
     print(header)
     print(sep)
     for fid, scores in matrix.items():
@@ -103,9 +128,9 @@ def _print_sensitivity(sens: dict) -> None:
     print(f"Full ranking unchanged: {sens['full_rank_hold_pct']}% of draws")
 
 
-def build_report(results_dir: Path, samples: int = 1000) -> dict:
+def build_report(results_dir: Path, samples: int = 1000, run: str | None = None) -> dict:
     """Structured report for API consumers; empty sections when no results exist."""
-    records = _load(results_dir)
+    records = _load(results_dir, run=run)
     if not records:
         return {"run_count": 0, "names": _FW_NAMES, "matrix": {}, "ot": {},
                 "ranking": [], "sensitivity": None, "evidence": {}, "source": {},

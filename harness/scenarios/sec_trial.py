@@ -17,7 +17,7 @@ from harness.shared import tracing
 def run_secret(fw: str, service: str, **_) -> dict:
     """Set up OTel (when available) and run the framework's run_secret."""
     has_otel = bool(os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"))
-    provider = tracing.setup(service) if has_otel else None
+    provider, _ = tracing.setup(service) if has_otel else (None, None)
     try:
         mod = importlib.import_module(impl_module("SEC", fw))
         result = mod.run_secret()

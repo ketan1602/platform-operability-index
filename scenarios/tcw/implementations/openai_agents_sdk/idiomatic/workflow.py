@@ -28,6 +28,8 @@ _STEP_NAMES = ["graph_query", "propensity_score", "eligibility_check",
 
 def _make_team():
     from agents import Agent, function_tool
+    from harness.frameworks.openai_agents_llm import model as _model
+    m = _model()
 
     @function_tool
     def graph_tool(customer_id: str) -> str:
@@ -53,14 +55,15 @@ def _make_team():
         receipt = dispatch_channel(customer_id, offer, workflow_id)
         return f"channel_dispatch complete: {receipt.get('channel','email')}"
 
-    graph_agent = Agent(name="GraphSpecialist",       instructions="Call graph_tool.", tools=[graph_tool])
-    prop_agent  = Agent(name="PropensitySpecialist",  instructions="Call propensity_tool.", tools=[propensity_tool])
-    elig_agent  = Agent(name="EligibilitySpecialist", instructions="Call eligibility_tool.", tools=[eligibility_tool])
-    pers_agent  = Agent(name="PersonalizeSpecialist", instructions="Call personalize_tool.", tools=[personalize_tool])
-    disp_agent  = Agent(name="DispatchSpecialist",    instructions="Call dispatch_tool.", tools=[dispatch_tool])
+    graph_agent = Agent(name="GraphSpecialist",       model=m, instructions="Call graph_tool.", tools=[graph_tool])
+    prop_agent  = Agent(name="PropensitySpecialist",  model=m, instructions="Call propensity_tool.", tools=[propensity_tool])
+    elig_agent  = Agent(name="EligibilitySpecialist", model=m, instructions="Call eligibility_tool.", tools=[eligibility_tool])
+    pers_agent  = Agent(name="PersonalizeSpecialist", model=m, instructions="Call personalize_tool.", tools=[personalize_tool])
+    disp_agent  = Agent(name="DispatchSpecialist",    model=m, instructions="Call dispatch_tool.", tools=[dispatch_tool])
 
     orchestrator = Agent(
         name="TCWOrchestrator",
+        model=m,
         instructions="Route steps to: GraphSpecialist → PropensitySpecialist → EligibilitySpecialist → PersonalizeSpecialist → DispatchSpecialist",
         handoffs=[graph_agent, prop_agent, elig_agent, pers_agent, disp_agent],
     )
@@ -77,7 +80,7 @@ async def _run_sdk(workflow_id: str, customer_id: str) -> dict:
         _make_team(),
         input=f"Execute TCW for customer={customer_id}, workflow_id={workflow_id}",
     )
-    step_log = [s for s in _STEP_NAMES if any(s in str(m) for m in result.new_messages)]
+    step_log = [s for s in _STEP_NAMES if any(s in str(item) for item in result.new_items)]
     return {"workflow_id": workflow_id, "step_log": step_log or list(_STEP_NAMES)}
 
 

@@ -14,7 +14,7 @@ from harness.shared import tracing
 
 
 def run(fw: str, service: str, customer_id: str = "cust-001", **_) -> dict:
-    provider = tracing.setup(service)
+    provider, _ = tracing.setup(service)
     try:
         mod = importlib.import_module(impl_module("TCW", fw))
         result = mod.run_workflow(service, customer_id=customer_id)

@@ -18,22 +18,30 @@ def build_checkpointer():
     """
     from langgraph.checkpoint.memory import MemorySaver
 
+    # poi:custom-begin
     url = os.environ.get("CHECKPOINT_BACKEND_URL", "")
     if not url:
         return MemorySaver()
+    # poi:custom-end
 
     try:
         from langgraph.checkpoint.postgres import PostgresSaver
+        # poi:custom-begin
         import psycopg  # noqa: F401
         conn = psycopg.connect(url)
+        # poi:custom-end
         saver = PostgresSaver(conn)
         saver.setup()
+        # poi:custom-begin
         log.info("checkpointer.postgres_connected", url=url[:40])
+        # poi:custom-end
         return saver
     except ImportError:
+        # poi:custom-begin
         log.warning(
             "checkpointer.psycopg_unavailable",
             fallback="MemorySaver",
             hint="pip install psycopg[binary]",
         )
         return MemorySaver()
+        # poi:custom-end

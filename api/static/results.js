@@ -1,9 +1,10 @@
 // Results rendering: score matrix, OT-LOC bars, ranking, sensitivity.
-const PILLARS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"];
+const PILLARS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9"];
 const PILLAR_LABELS = {
   p1: "P1 Durable execution", p2: "P2 Blast radius", p3: "P3 Observability",
   p4: "P4 Packageability", p5: "P5 Migration fragility",
   p6: "P6 Portability", p7: "P7 Developer experience", p8: "P8 Security posture",
+  p9: "P9 Ops experience",
 };
 const TAG_STATUS = { stable: "success", contested: "warning", fragile: "error" };
 const TAG_ICON = { stable: "●", contested: "▲", fragile: "■" };
@@ -114,14 +115,16 @@ function renderSensitivity(r) {
 }
 
 function renderFinOps(r) {
-  const vals = Object.fromEntries(r.ranking.map((fid) => [fid, r.finops[fid]?.total_input_tokens ?? 0]));
+  const vals = Object.fromEntries(r.ranking.map((fid) => [fid, r.finops[fid]?.total_tokens ?? 0]));
+  const inTok = Object.fromEntries(r.ranking.map((fid) => [fid, r.finops[fid]?.input_tokens ?? 0]));
+  const outTok = Object.fromEntries(r.ranking.map((fid) => [fid, r.finops[fid]?.output_tokens ?? 0]));
   const max = Math.max(...Object.values(vals), 1);
   const order = [...r.ranking].sort((a, b) => vals[a] - vals[b]);
   const rows = order.map((fid) => el("div", { class: "bar-row" }, [
     el("span", { class: "bar-label", text: r.names[fid] }),
     el("div", { class: "bar-track" }, el("div", {
       class: "bar-fill", style: `width:${(vals[fid] / max) * 100}%`,
-      tip: `${r.names[fid]}: ${vals[fid].toLocaleString()} input tokens · est $${r.finops[fid]?.estimated_run_cost_usd ?? "–"}`,
+      tip: `${r.names[fid]}: ${inTok[fid].toLocaleString()} in · ${outTok[fid].toLocaleString()} out · ${vals[fid].toLocaleString()} total`,
     })),
     el("span", { class: "bar-value", text: vals[fid] > 0 ? `${(vals[fid] / 1000).toFixed(0)}k` : "–" }),
   ]));
@@ -148,12 +151,28 @@ function renderPerf(r) {
   return el("div", { class: "bars" }, rows);
 }
 
+async function loadRunList() {
+  const mode = document.querySelector("input[name=results-mode]:checked").value;
+  const sel = document.getElementById("run-select");
+  const prev = sel.value;
+  try {
+    const r = await (await fetch(`/api/v1/run-list?mode=${mode}`)).json();
+    sel.replaceChildren(new Option("All runs (aggregated)", ""));
+    for (const run of r.runs) {
+      sel.append(new Option(`${run.label}  (${run.file_count} files)`, run.id));
+    }
+    if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  } catch (_) { /* leave selector as-is on network error */ }
+}
+
 async function loadResults() {
   const mode = document.querySelector("input[name=results-mode]:checked").value;
-  const res = await fetch(`/api/v1/results?mode=${mode}`);
+  const run = document.getElementById("run-select").value;
+  const url = run ? `/api/v1/results?mode=${mode}&run=${run}` : `/api/v1/results?mode=${mode}`;
+  const res = await fetch(url);
   const r = await res.json();
-  const ids = ["matrix", "ot", "ranking", "evidence", "sensitivity"];
-  ids.forEach((id) => document.getElementById(id).replaceChildren());
+  const ids = ["matrix", "ot", "ranking", "evidence", "finops", "perf", "sensitivity"];
+  ids.forEach((id) => { const el = document.getElementById(id); if (el) el.replaceChildren(); });
   const meta = document.getElementById("results-meta");
   if (!r.run_count) {
     meta.textContent = `No ${mode === "live" ? "live" : "dry-run"} results yet — start a run.`;
@@ -173,4 +192,8 @@ async function loadResults() {
   bindTooltips(document.getElementById("results-card"));
 }
 
-document.querySelectorAll("input[name=results-mode]").forEach((i) => i.addEventListener("change", loadResults));
+document.querySelectorAll("input[name=results-mode]").forEach((i) => i.addEventListener("change", async () => {
+  await loadRunList();
+  loadResults();
+}));
+document.getElementById("run-select").addEventListener("change", loadResults);

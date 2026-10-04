@@ -1,12 +1,10 @@
 # Platform Operability Index (POI)
 
-**Agent Frameworks Benchmarking — Principles and Rationale**
-
-A reproducible benchmark for measuring the **production operability** of five Python agentic frameworks across two enterprise workflow scenarios.
+A reproducible benchmark for measuring the **production operability** of five Python agentic frameworks across realistic enterprise workflow scenarios.
 
 ---
 
-## The Problem
+## 1. The Problem
 
 Most agentic framework evaluations stop at capability: can it reason, can it use tools, does it pass the task? That is the wrong question for an enterprise platform team.
 
@@ -16,122 +14,42 @@ A framework that scores well on capability benchmarks but lacks native checkpoin
 
 These costs are real, recurring, and rarely measured. They compound: a team that spends two weeks writing checkpoint scaffolding is also the team that falls behind on feature delivery, delays the next framework upgrade, and accumulates technical debt that future teams inherit.
 
-**POI quantifies that cost as two numbers:**
-- **POI score (0–15):** how much the framework provides out of the box. Higher = less work for your platform team.
+---
+
+## 2. What is POI?
+
+POI quantifies the operational cost of a framework as two numbers:
+
+- **POI score (0–27):** how much the framework provides out of the box across 9 pillars (0–3 each). Higher = less work for your platform team.
 - **OT-LOC (Operability Tax, lines of code):** how much custom scaffolding your team must write to reach production-grade operability. Lower = less ongoing maintenance burden.
 
----
+### Nine Pillars
 
-## Why These Five Pillars
+| Pillar | What it measures |
+|--------|-----------------|
+| P1 — Durable Execution | Checkpoint + resume after a hard crash (SIGKILL); idempotency under concurrent resume |
+| P2 — Blast-Radius Containment | Runaway loop halting; fault isolation so one specialist's failure doesn't crash the run |
+| P3 — Observability Nativeness | OTel Gen-AI span attributes, connected traces, custom exporter cost |
+| P4 — Packageability | Kubernetes / Helm deployability; K8s fit (lazy init, SIGTERM, HITL gate) |
+| P5 — Migration Fragility | Breaking-change frequency; checkpoint schema stability across releases |
+| P6 — Tool Quality | Plain-function tool acceptance; portability of tool definitions across frameworks |
+| P7 — Developer Experience | Time-to-first-run; error clarity; middleware injection; ecosystem and vendor independence |
+| P8 — Security | Tool scope enforcement; context isolation; telemetry cleanliness; credential bleed |
+| P9 — Ops Experience | Token cost, latency, concurrency throughput, resource footprint, cross-worker resume |
 
-The five pillars were selected from the failure modes most commonly cited in enterprise post-mortems for agentic systems:
+### Scoring Rubric (per pillar)
 
-### P1 — Durable Execution & Replayability
-**The failure mode:** an agent crashes at step 4 of 7. Without checkpointing, the entire workflow replays from step 1 — re-running external API calls, retrying CRM writes, re-triggering approvals. With idempotency gaps, retried calls cause duplicate side effects.
+| Score | Meaning |
+|-------|---------|
+| 0 | The property is absent — you must build it from scratch |
+| 1 | The property exists but requires significant custom scaffolding |
+| 2 | The property works but with manual operator configuration |
+| 3 | The property is fully native — the framework handles it without custom code |
 
-**What we measure (AHQ scenario):** an agent pauses at the framework's own human-approval gate before an irreversible action. The harness SIGKILLs the process, sends the approval through RabbitMQ while no agent process exists, then delivers it twice (at-least-once, as queues do) to two fresh processes resuming at the same instant. Does the run resume with its state intact, without re-running earlier steps, and does the irreversible action execute exactly once? How much custom persistence code did it take?
-
-**Why this matters at scale:** at 10,000 agent runs/day, even a 1% crash rate means 100 full workflow replays daily. At step-level restart, that's a 7× reduction in wasted compute and external API calls.
-
-### P2 — Blast-Radius Containment
-**The failure mode:** a prompt injection or model hallucination triggers an infinite tool-calling loop. Without native containment, the loop runs until it exhausts API credits, fills a database, or is killed by ops after a page.
-
-**What we measure (RLC and SMA scenarios):** in RLC, a ReAct agent is given a tool that never returns what it asks for. Does the framework stop the loop *with its default settings*, and does it surface a typed signal (an exception class or typed stop reason) the platform can catch? If not, the harness — acting as the platform — kills the process at a tool-call ceiling. A second trial sets the framework's documented limit and checks it is honoured. In SMA, one specialist agent's tool fails: does the failure stay inside that agent, or does it crash or hang the whole multi-agent run?
-
-**Why this matters at scale:** a runaway loop in a shared multi-tenant environment is a cross-tenant incident. Native containment means the framework handles this without operator intervention; SIGTERM-only containment means a human must be paged.
-
-### P3 — Observability Nativeness
-**The failure mode:** an agent loop fails intermittently. Your SRE team checks Grafana and finds no spans, no token counts, no latency histograms — because the framework emits no OpenTelemetry data by default. Root-cause analysis requires log archaeology.
-
-**What we measure (SMA scenario):** the harness installs the standard platform OTel setup — a global TracerProvider exporting OTLP to Jaeger — and nothing framework-specific. After a supervisor delegates to three specialists, the run's spans are read back from Jaeger. Do they carry the Gen-AI semantic-convention attributes (`gen_ai.operation.name`, `gen_ai.provider.name` or its predecessor `gen_ai.system`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`)? Is the whole multi-agent run one connected trace, with every agent visible and no orphaned spans?
-
-**Why this matters at scale:** a framework that requires a custom OTel exporter means one more piece of infrastructure your platform team owns, maintains, and on-calls for.
-
-### P4 — Golden-Path Packageability
-**The failure mode:** deploying the framework to a policy-enforced Kubernetes cluster requires undocumented environment variables, framework-internal hooks, or template hacks that bypass Kyverno ClusterPolicies. Every deployment is a one-off negotiation with the security team.
-
-**What we measure:** can the framework be packaged as a Helm chart in ≤ 200 lines that passes a standard set of Kyverno policies (secrets via `secretKeyRef`, resource limits declared, OTel endpoint configured) without framework-specific workarounds?
-
-**Why this matters at scale:** organisations with dozens of agent services need a golden-path chart that any team can copy-paste. Framework-specific hacks mean the chart cannot be standardised — each team maintains its own fork.
-
-### P5 — Day-2 Migration Fragility
-**The failure mode:** a patch-level framework upgrade ships a renamed method, a changed tool schema, or a new checkpoint format. Agents that were working break silently; or worse, resume from checkpoints that are now unreadable.
-
-**What we measure:** how many breaking changes (API, schema, prompt) appear per release on average? Does a checkpoint migration step appear in the upgrade guide? Is the changelog explicit and machine-parseable?
-
-**Why this matters at scale:** at 50 agent services across 10 teams, a framework with 3 breaking changes per release means 150 code changes on every quarterly upgrade cycle — across teams, across environments, requiring co-ordinated freeze windows.
-
----
-
-## The Measurement Philosophy
-
-### Ordinal 0–3 scale, not continuous
-
-We use a 0–3 ordinal scale per pillar because the differences that matter in practice are categorical:
-- Score 0: the property is absent — you must build it from scratch.
-- Score 1: the property exists but requires significant custom scaffolding.
-- Score 2: the property works but with manual operator configuration.
-- Score 3: the property is fully native — the framework handles it without custom code.
-
-Continuous scoring would imply false precision. Whether LangGraph's resume latency is 280ms or 310ms is not what determines framework selection — whether it *has* resume at all is.
-
-### Measure behaviour, don't describe it
-
-An operability benchmark earns credibility only if its scores come from what the framework *did*, not from what its documentation says. POI v1 scored durability, containment and observability largely from desk research, and several of those values turned out to be wrong once measured. For example, LangGraph's default recursion limit is 10,007 steps, not 25, and two frameworks re-raise a specialist agent's tool exception and crash the whole run.
-
-POI therefore separates two kinds of scenario.
-
-**Measured scenarios — the evidence for P1–P3.** Each one is built to stress a specific pillar. All are idiomatic: they exist to exercise each framework's *native* mechanism, so a lowest-common-denominator version would defeat the purpose.
-
-| Scenario | Stresses | What the harness does |
-|---|---|---|
-| **RLC** — ReAct loop containment | P2 | Gives a ReAct agent a tool that always answers "incomplete, call again"; kills the process at a tool-call ceiling if the framework doesn't stop it; repeats with the documented limit set |
-| **SMA** — supervisor multi-agent | P2, P3 | A supervisor delegates to billing, network and retention specialists (agents-as-tools). Reads the healthy run's spans back from Jaeger; then makes the network specialist's tool fail |
-| **AHQ** — async human approval | P1 | Pauses at the framework's approval gate, SIGKILLs the process, routes the approval through RabbitMQ, resumes in two fresh processes simultaneously |
-
-**Baseline workflows — GEW and TCW.** A 5-step enterprise approval chain and a 5-step telco next-best-action pipeline, each implemented in a fixed (identical DAG) and an idiomatic form. They check that each framework can express a realistic workflow, and they carry the P4 and P5 inputs, which are framework properties that don't depend on the scenario. TCW's customer graph is a real Neo4j database.
-
-### The harness is the platform
-
-The measured scenarios put the harness in the position a platform team occupies. It supervises each trial as a separate process and does only what a platform can do from outside: set a global OTel provider, kill a runaway process, route messages through a queue. It uses **SIGKILL, not SIGTERM**, because a graceful shutdown would let the framework flush its state and flatter its durability score. The backing services are real: Postgres (checkpoints), RabbitMQ (approvals), Jaeger in the Istio mesh (traces) and Neo4j (customer graph), all on the same Kubernetes cluster. Every tool call is written to an append-only ledger that survives the kill, and the evidence is read from that ledger rather than from what the framework reports about itself.
-
-### Live LLM, repeated, median, weakest link
-
-All measured scenarios run against a live LLM (AI Refinery, `openai/gpt-oss-120b`, the same model for every framework). A live model varies from run to run, so each framework × scenario is run **5 times**:
-- **Within a scenario**, the pillar score is the **median** of the repeats (the lower median, so scores stay whole numbers). The range is reported next to it.
-- **Across scenarios**, a pillar takes the **minimum**. Operability fails at its weakest link, so a framework that contains runaway loops but crashes when one agent fails does not get credit for containment.
-- **Inconclusive, not zero.** If the model stops calling the tool before any limit is reached, that RLC repeat produces no evidence. It is excluded from the median and counted separately. A framework is never scored on a test that didn't actually happen.
-
-### Operability Tax (OT-LOC) as a second axis
-
-POI score tells you what the framework gives you. OT-LOC tells you what you pay for what it doesn't give you. A framework with POI=7 and OT=124 LOC may be more practical than one with POI=9 and OT=179 LOC, depending on your team's capacity to maintain scaffolding.
-
-OT-LOC is the sum of custom lines needed across P1–P4:
-- P1: custom persistence the framework doesn't provide (for example, storing serialised run state in Postgres)
-- P2: kill-switch or loop-budget glue code
-- P3: custom telemetry glue beyond the standard global OTel setup
-- P4: Helm template lines (all templates are operability overhead — a framework with a leaner packaging footprint requires less YAML to maintain)
-
-Custom code is fenced in the implementations with `# poi:custom-begin` / `# poi:custom-end` markers, and the harness counts the fenced lines. Helm templates are counted directly. No estimate or self-reported time feeds any score.
-
----
-
-## The Five Pillars — Scoring Rubric
-
-| Pillar | Score 0 | Score 1 | Score 2 | Score 3 |
-|---|---|---|---|---|
-| **P1 Durable Execution** (AHQ) | Cannot resume in a fresh process after SIGKILL | Resumes, but state is lost or earlier steps re-run | Resumes cleanly, but needs custom persistence code **or** executes the irreversible action twice under concurrent resume | Resumes cleanly from a native durable backend, zero custom code, action executes exactly once |
-| **P2 Blast-Radius** (RLC, SMA) | A failing agent hangs the whole run | Only a platform kill stops a runaway loop; **or** one failing agent crashes the whole run | Loop stops only once a limit is configured, or stops by default without a typed signal | Stops a runaway loop by default with a typed exception or stop reason, **and** a failing agent stays contained |
-| **P3 Observability** (SMA) | No OTel spans reach the collector | Spans lack required Gen-AI attributes | All attributes present, but the multi-agent run is not one connected trace, or custom telemetry code was needed | All attributes, one connected trace covering every agent, no custom code |
-| **P4 Packageability** | No Helm path | > 200 template lines | ≤ 200 lines, framework-specific K8s workarounds | ≤ 200 lines, zero workarounds, standard K8s primitives only |
-| **P5 Migration Fragility** | > 3 breaking changes/release avg | 1–3 breaking changes/release avg | < 1 breaking change/release, no schema migration | Zero breaking changes in patch; stable checkpoint schema |
-
----
-
-## Frameworks Benchmarked
+### Frameworks Benchmarked
 
 | ID | Framework | What it is |
-|---|---|---|
+|----|-----------|------------|
 | F1 | [LangGraph](https://github.com/langchain-ai/langgraph) | Graph-based stateful agent orchestration by LangChain |
 | F2 | [AutoGen / MS AgentChat](https://github.com/microsoft/autogen) | Microsoft's multi-agent conversation framework |
 | F3 | [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) | OpenAI's first-party agent SDK with hosted state |
@@ -140,22 +58,327 @@ Custom code is fenced in the implementations with `# poi:custom-begin` / `# poi:
 
 ---
 
+## 3. Setup & Execution
+
+### Prerequisites
+
+- **Python 3.12+** — [python.org/downloads](https://www.python.org/downloads/)
+- **`uv`** — fast Python package manager used by `setup_venvs.sh`:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
+  # or: pip install uv
+  ```
+- **[OrbStack](https://orbstack.dev/)** (or any Kubernetes cluster) — for live infra runs only; not needed for dry-run
+- **An API key for at least one LLM provider** (see below)
+
+### Install
+
+Each framework has conflicting dependencies, so each gets its own venv:
+
+```bash
+./setup_venvs.sh
+```
+
+This creates `.venv/` under each adapter directory (`harness/adapters/{langgraph,ms_agent,openai_sdk,google_adk,strands}/`).
+
+### Configure secrets
+
+```bash
+cp .env.example .env
+```
+
+The harness uses a **provider-agnostic LLM config** — set the three variables below for whichever provider you have access to. All five framework adapters route through the same endpoint.
+
+#### Option A — OpenAI
+
+```bash
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=sk-...
+MODEL_ID=gpt-4o
+```
+
+#### Option B — Anthropic (Claude)
+
+```bash
+LLM_BASE_URL=https://api.anthropic.com/v1
+LLM_API_KEY=sk-ant-...
+MODEL_ID=claude-sonnet-4-5
+```
+
+> Anthropic's API uses different request/response shapes from OpenAI. The harness LLM client detects `anthropic.com` in `LLM_BASE_URL` and switches to the `anthropic` SDK path automatically.
+
+#### Option C — AI Refinery (Accenture internal)
+
+```bash
+LLM_BASE_URL=https://<your-refinery-host>/v1
+LLM_API_KEY=<airefinery-key>
+MODEL_ID=openai/gpt-oss-120b
+AIREFINERY_SDK_VERSION=2          # optional — defaults to 2
+```
+
+AI Refinery exposes an OpenAI-compatible `/v1/chat/completions` endpoint, so no special handling is needed beyond the three standard variables.
+
+#### Option D — Any OpenAI-compatible endpoint (Ollama, Azure OpenAI, LiteLLM proxy, etc.)
+
+```bash
+LLM_BASE_URL=http://localhost:11434/v1   # example: Ollama
+LLM_API_KEY=ollama                        # placeholder; Ollama ignores the key
+MODEL_ID=llama3.2
+```
+
+Set `LLM_BASE_URL` to any endpoint that speaks the OpenAI `/v1/chat/completions` protocol and the harness will use it without code changes.
+
+### Dry-run (no LLM calls, no infrastructure)
+
+Verifies the harness wiring, scoring, and output format using canned fixtures:
+
+```bash
+DRY_RUN=true python3 -m harness.run_all --scenarios GEW TCW
+```
+
+### Live run (real LLM, real infrastructure)
+
+Bring up the backing services first (Postgres, RabbitMQ, Neo4j, Jaeger — all port-forwarded from the cluster):
+
+```bash
+./deploy-mocks.sh        # deploy mock server pods once
+./infra.sh up            # port-forward all services; writes .env.infra
+```
+
+Then run the benchmark:
+
+```bash
+# All frameworks, all scenarios, 5 repeats each (median scoring)
+./run_bench.sh
+
+# Subset — specific frameworks and scenarios
+./run_bench.sh --frameworks F1 F5 --scenarios RLC SMA AHQ --repeats 3
+
+# Single scenario, single framework
+./run_bench.sh --frameworks F1 --scenarios AHQ --repeats 1
+```
+
+Tear down when done:
+
+```bash
+./infra.sh down
+```
+
+### Generate the report
+
+```bash
+python3 analysis/poi_report.py
+```
+
+Results are written to `results/` as YAML (one file per run) and the report produces the score matrix, OT-LOC table, sensitivity analysis, and per-pillar evidence summaries.
+
+### Key environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LLM_BASE_URL` | — | LLM API base URL (any OpenAI-compatible endpoint) |
+| `LLM_API_KEY` | — | API key for the chosen provider |
+| `MODEL_ID` | — | Model identifier (e.g. `gpt-4o`, `claude-sonnet-4-5`, `llama3.2`) |
+| `DRY_RUN` | `false` | Skip LLM calls and infra; return canned fixtures |
+| `POI_REPEATS` | `5` | Repeats per framework × scenario; scores are medians |
+| `POI_PARALLEL` | `5` | Concurrent frameworks (each in its own venv subprocess) |
+| `POI_RLC_MAX_CALLS` | `100` | Tool-call ceiling before the harness kills a runaway loop |
+| `POI_RLC_CONFIGURED_LIMIT` | `5` | Limit used in the second RLC trial |
+| `POI_AHQ_PAUSE_S` | `20` | Seconds the approval waits in RabbitMQ while no agent exists |
+| `KUBE_CONTEXT` | `orbstack` | Kubernetes context for `./infra.sh` |
+
+---
+
+## 4. Baseline Scenarios
+
+Baseline scenarios establish that each framework can express a realistic workflow before stressing its operability properties. They run in both `fixed` (identical DAG across all frameworks) and `idiomatic` (each framework's native patterns) form.
+
+### GEW — Global Enterprise Workflow
+
+A 5-step enterprise approval chain: account lookup → risk assessment → compliance check → CRM update → notification dispatch. Every step calls a distinct mock service via MCP.
+
+**What it validates:** the framework can express a sequential workflow with external tool calls, and produces a checkpoint-capable graph (used by P1 probes for resume testing). The CRM update step is the idempotency probe: under concurrent resume, it must execute exactly once.
+
+**Implementations:** `scenarios/gew/implementations/{langgraph,ms_agent,openai_agents_sdk,google_adk,strands_agents}/`
+
+### TCW — Telco Next-Best-Action Workflow
+
+A 5-step customer retention pipeline: profile fetch → Neo4j graph query → propensity model → channel selection → offer dispatch. The customer graph is a real Neo4j instance with populated data.
+
+**What it validates:** the framework can handle a heterogeneous tool mix (REST, graph DB, ML API) and a stateful context that grows with each step. TCW's tool failure profile drives P2 and P3 evidence collection.
+
+**Implementations:** `scenarios/tcw/implementations/{langgraph,ms_agent,openai_agents_sdk,google_adk,strands_agents}/`
+
+---
+
+## 5. Testing Principles
+
+### Empirical over static
+
+86 of the 99 model fields across all nine pillars are **probed at runtime** — the harness runs a workflow, kills a process, reads Jaeger spans, or counts lines between `# poi:custom-begin` / `# poi:custom-end` markers. Scores come from what the framework *did*, not from what its documentation claims.
+
+The 13 remaining static fields require human judgment that cannot be automated (e.g. template creation hours, vendor independence assessment, ecosystem community score). See the breakdown below:
+
+| Pillar | Empirical | Static | Static fields |
+|--------|-----------|--------|---------------|
+| P1 Durable Execution | 10/11 | 1 | `manual_watchdog_required` |
+| P2 Blast-Radius | 15/16 | 1 | `custom_code_lines_for_isolation`* |
+| P3 Observability | 10/12 | 2 | `proprietary_backend_required`, `alert_latency_ms` |
+| P4 Packageability | 10/16 | 6 | `template_creation_time_hrs`, `deployment_time_hrs`, `one_day_deployment_achieved`, `blockers_encountered`, `framework_specific_hacks_required`, `required_framework_internal_hooks` |
+| P5 Migration Fragility | 9/9 | 0 | — |
+| P6 Tool Quality | 7/8 | 1 | `context_injection` |
+| P7 Dev Experience | 11/13 | 2 | `community_score`, `vendor_independence_score` |
+| P8 Security | 8/8 | 0 | — |
+| P9 Ops Experience | 6/6 | 0 | — |
+
+\* The P2 fallback hardcodes 5 lines; the SMA measured path counts isolation LOC from `isolation_shim.py` via `custom_loc.count()`.
+
+### Ordinal 0–3, not continuous
+
+We use a 0–3 ordinal scale per pillar because the differences that matter in practice are categorical. Whether LangGraph's resume latency is 280ms or 310ms is not what determines framework selection — whether it *has* resume at all is. Continuous scoring implies false precision.
+
+### Live LLM, repeated, median, weakest link
+
+All measured scenarios run against a live LLM (AI Refinery, `openai/gpt-oss-120b`, the same model for every framework). Each framework × scenario is run **5 times**:
+
+- **Within a scenario:** the pillar score is the **median** of the repeats (lower median, so scores stay whole numbers). The range is reported next to it.
+- **Across scenarios:** a pillar takes the **minimum**. Operability fails at its weakest link.
+- **Inconclusive, not zero:** if the model stops calling the tool before any limit is reached, that repeat produces no evidence. It is excluded from the median and counted separately.
+
+### The harness is the platform
+
+The harness occupies the position a platform team occupies — outside the framework, acting only through signals a platform can send: a global OTel provider, a SIGKILL, a RabbitMQ message. It uses **SIGKILL, not SIGTERM**, because a graceful shutdown would let the framework flush state and flatter its durability score. The backing services are real: Postgres, RabbitMQ, Jaeger, and Neo4j — all on Kubernetes. Every tool call is appended to a per-run JSONL ledger that survives the kill.
+
+### Operability Tax (OT-LOC)
+
+OT-LOC is the sum of custom lines across P1–P4:
+
+- **P1:** custom persistence code the framework doesn't provide
+- **P2:** kill-switch or loop-budget glue code
+- **P3:** custom telemetry exporter lines beyond the standard OTel setup
+- **P4:** Helm template lines (all templates are operability overhead)
+
+Lines are counted from `# poi:custom-begin` / `# poi:custom-end` markers in each implementation. No estimate or self-reported time feeds any score.
+
+---
+
+## 6. Scenario Deep Dives
+
+### RLC — ReAct Loop Containment *(P2)*
+
+**What it tests:** does the framework stop a runaway tool-calling loop without operator intervention, and does it surface a typed signal the platform can catch?
+
+**How it runs:**
+1. A ReAct agent is given a tool (`check_progress`) that always returns `"incomplete, retry"` — it never satisfies the agent's goal.
+2. **Trial A (default settings):** the harness watches the tool ledger. If the framework stops the loop, the stop signal (exception class or typed stop reason) is recorded. If the loop reaches `POI_RLC_MAX_CALLS` (default 100), the harness sends SIGKILL — the framework failed to contain by default.
+3. **Trial B (configured limit):** the framework's documented loop-limit setting is set to `POI_RLC_CONFIGURED_LIMIT` (default 5). The harness checks the limit is honoured.
+
+**Evidence read:** tool call count, stop signal type, `configured_limit_honored`.
+
+---
+
+### SMA — Supervisor Multi-Agent *(P2, P3)*
+
+**What it tests:** fault isolation (one specialist failing must not crash the run); OTel trace quality across agent hops.
+
+**How it runs:**
+1. A supervisor delegates to three specialists: billing, network, and retention — each wrapping a different tool.
+2. **Trial A (healthy):** the run completes normally. The harness reads back spans from Jaeger (or in-process span buffers) and checks Gen-AI semantic-convention attributes, trace connectivity, and orphan spans.
+3. **Trial B (fault injection):** the network specialist's tool raises an exception. The harness records whether the failure stayed contained, crashed the run, or hung it.
+4. **Trial C (multi-tenancy):** three concurrent in-process invocations of the PORT isolation workflow check for cross-invocation state contamination.
+
+**Evidence read:** `failure_propagation`, `sibling_agents_completed`, `concurrent_tenancy_safe`, `framework_spans`, `trace_ids_per_run`, `orphan_spans`, `alert_fired_without_custom_code`, `custom_exporter_loc`.
+
+---
+
+### AHQ — Async Human Approval *(P1)*
+
+**What it tests:** does a paused approval survive a hard process kill and resume exactly once?
+
+**How it runs:**
+1. An agent runs until it hits the framework's human-approval gate (e.g. LangGraph `interrupt()`, a custom `await_approval()` stub for others). The process is then **SIGKILLed** — not SIGTERM.
+2. The approval request is published to RabbitMQ. It sits there for `POI_AHQ_PAUSE_S` seconds while no agent process exists.
+3. Two fresh processes receive the approval simultaneously (simulating at-least-once queue delivery). The harness checks: did the irreversible action execute exactly once, or twice?
+4. `resume_succeeded`, `state_intact_after_kill`, and `side_effect_executions` are read from the ledger.
+
+**Evidence read:** `resume_succeeded`, `state_intact_after_kill`, `steps_re_executed_on_resume`, `side_effect_executions`, `concurrent_resume_collision`, `resume_latency_ms`, `custom_code_lines_to_reach_score_3`.
+
+---
+
+### PORT — Tool Portability *(P6)*
+
+**What it tests:** can the framework accept plain Python functions as tools without a framework decorator? Can it resume from a neutral conversation history? How many lines change when porting a workflow from another framework?
+
+**How it runs:**
+1. **tools_raw sub-test:** plain Python functions (no `@tool`, `function_tool()`, or `@tool` decorator) are passed to the framework's agent constructor. The ledger records which tools were actually called.
+2. **switch sub-test:** decorator-wrapped tools are used, the agent completes a 3-step task. The output is checked for JSON-serializability.
+3. **context sub-test:** a neutral conversation history (framework-agnostic dict) is injected as context; the agent is asked to continue from it.
+4. **cross_venv sub-test:** the 20 SMA workflows ported from each source framework are run in each target framework's venv (with loop-limit isolation shims added); the success rate is recorded.
+
+**Evidence read:** `tools_called_unmodified`, `task_completed`, `state_json_safe`, `context_portable`, `context_injection`, `port_changed_lines`, `cross_venv_success_rate`.
+
+---
+
+### DX — Developer Experience *(P7)*
+
+**What it tests:** how quickly can a developer get a first run? How clear are error messages? Can the framework be observed and extended without class changes?
+
+**How it runs:**
+1. **TTR probe:** a smoke workflow is timed from cold import to first agent response.
+2. **Error clarity probes (A–E):** five intentional mistakes are introduced one at a time (wrong return type, missing arg, bad LLM init, `None` instead of `str`, wrong type annotation). Each error's traceback is scored 0–3 on actionability.
+3. **middleware_injectable:** a callback is registered without subclassing or patching the agent; tool invocations are checked against the ledger.
+4. **local_testability:** the smoke workflow is run with no cloud credentials set; the resulting error is scored on clarity.
+5. **escape_hatch:** custom OTEL endpoint, env-var overrides, and tracing configuration are tested without framework internals.
+
+**Evidence read:** `time_to_first_run_s`, `error_clarity_a`–`e`, `functional_verified`, `middleware_injectable`, `local_testability_score`, `escape_hatch_score`, `community_score`, `vendor_independence_score`.
+
+---
+
+### SEC — Security Enforcement *(P8)*
+
+**What it tests:** does the framework enforce security boundaries at the framework level, independent of LLM behaviour?
+
+**How it runs:**
+1. **scope sub-test:** `user_agent` has only `public_tool`. It is instructed to call `restricted_tool`. The harness checks whether the call was blocked by the framework.
+2. **context sub-test:** `agent_a` retrieves PII. A fresh `agent_b` is started in a separate session. The harness checks whether the PII sentinel appears in `agent_b`'s output or context.
+3. **telemetry sub-test:** a minimal agent runs with `POI_SEC_SENTINEL` embedded in the environment. Stdout/stderr are scanned for the sentinel value.
+4. **bleed sub-test:** an agent is asked to fetch `POI_BLEED_TOKEN` from the environment and call an external API with it. A mock auth server logs any requests that carry the token.
+5. **span_hygiene sub-test:** an LLM call runs with OTEL enabled. Jaeger spans are checked for raw HTTP LLM spans that lack Gen-AI semantic-convention attributes.
+
+**Evidence read:** `tool_scope_enforced`, `context_isolation_verified`, `telemetry_clean`, `http_cred_bleed_events`, `trace_spans_clean`, `k8s_scope_enforced`, `admission_blocked`.
+
+---
+
+### OPS — Ops Experience *(P9)*
+
+**What it tests:** token cost, latency, concurrency throughput, and resource footprint of a representative agent cycle. Whether checkpoint state survives a worker kill (cross-worker resume, wired from AHQ result).
+
+**How it runs:**
+1. **Primary run:** the DX SMOKE workflow is run as a child subprocess. A background thread samples child RSS and CPU via `psutil` at 0.5 s intervals throughout the run.
+2. **Sequential baseline:** a single run is timed (wall-clock).
+3. **Concurrent run:** `POI_OPS_CONCURRENCY` (default 3) runs are launched simultaneously via `ThreadPoolExecutor`. Throughput ratio = (N × sequential wall time) / concurrent wall time.
+4. **cross_worker_resume:** read from the in-process `result_cache` populated by the AHQ trial (if AHQ ran in the same process). If AHQ has not run, the field stays `None`.
+
+**Evidence read:** `input_tokens_per_run`, `agent_run_latency_ms`, `concurrent_throughput_ratio`, `peak_rss_mb`, `avg_cpu_percent`, `cross_worker_resume`.
+
+---
+
 ## Results
 
 ### Score Matrix
 
-| Framework | P1 | P2 | P3 | P4 | P5 | **POI** |
-|---|---|---|---|---|---|---|
+| Framework | P1 | P2 | P3 | P4 | P5 | **POI (P1–P5)** |
+|-----------|----|----|----|----|----|----|
 | LangGraph (F1) | 2 | **3** | 1 | 2 | 1 | **9** |
-| AutoGen/MS (F2) | 0 | 1 | 1 | 2 | 1 | 5 |
-| OpenAI SDK (F3) | 0 | 1 | 1 | 2 | **3** | 7 |
-| Google ADK (F4) | 2 | 1 | 1 | 2 | 2 | 8 |
+| AutoGen/MS (F2) | 0 | 1 | 1 | 2 | 1 | **5** |
+| OpenAI SDK (F3) | 0 | 1 | 1 | 2 | **3** | **7** |
+| Google ADK (F4) | 2 | 1 | 1 | 2 | 2 | **8** |
 | Strands (F5) | 0 | 1 | **2** | **3** | **3** | **9** |
 
 ### Operability Tax
 
 | Framework | OT-LOC | POI |
-|---|---|---|
+|-----------|--------|-----|
 | OpenAI SDK | 124 | 7 |
 | AutoGen/MS | 135 | 5 |
 | LangGraph | 179 | 9 |
@@ -165,39 +388,37 @@ Custom code is fenced in the implementations with `# poi:custom-begin` / `# poi:
 ### Per-Framework Findings
 
 **LangGraph (POI 9, OT 179 LOC)**
-- P2=3: the only framework with *active* runtime containment — `recursion_limit` is enforced by the graph executor, which raises a structured `GraphRecursionError` catchable in application code. Every other framework either requires custom loop logic or relies on SIGTERM.
-- P1=2 (not 3): MemorySaver checkpoints are parseable and resume works, but the checkpoint format is LangGraph-specific. Cross-process portability requires swapping to PostgresSaver — one config change, no code change, but still an operator step. Score-3 requires zero operator steps.
-- P5=1: checkpoint schema changes across minor versions require migration. The upgrade guide documents these, but they still require coordinated deploys.
-- **The OT paradox:** LangGraph has the highest POI but its 179 LOC of scaffolding is the checkpoint backend wiring and psycopg Dockerfile overhead — the price of its P1 capability.
+- P2=3: the only framework with active runtime containment — `recursion_limit` is enforced by the graph executor, raising a structured `GraphRecursionError` catchable in application code.
+- P1=2: resume works, but the checkpoint format is LangGraph-specific. Cross-process portability requires swapping to `PostgresSaver` — one config change, no code change, but still an operator step.
+- P5=1: checkpoint schema changes across minor versions require migration.
+- **The OT paradox:** highest POI, but 179 LOC of scaffolding is the checkpoint backend wiring and psycopg Dockerfile overhead — the price of its P1 capability.
 
 **Strands (POI 9, OT 195 LOC)**
-- P4=3: the only framework with zero framework-specific Kubernetes workarounds. OTel is configured via standard `OTEL_EXPORTER_OTLP_ENDPOINT`; secrets are standard env vars. The Helm chart passes all Kyverno ClusterPolicies without hacks.
-- P3=2 (not 3): Strands emits all four required Gen-AI OTel attributes natively — but still requires `strands-otel` to be wired up as a custom exporter. The attributes are there; the plumbing isn't automatic.
-- P1=0: no native checkpoint/resume mechanism. A crash at step 4 means full restart from step 1. Reaching score-3 P1 requires a custom state-serialisation wrapper (~80 LOC), which is the primary driver of its OT.
-- **The counterintuitive result:** Strands ties LangGraph at POI=9 via an entirely different profile — it wins on packaging and API stability where LangGraph wins on durability and containment.
+- P4=3: the only framework with zero framework-specific Kubernetes workarounds. OTel is configured via standard `OTEL_EXPORTER_OTLP_ENDPOINT`; secrets are standard env vars.
+- P3=2: all four required Gen-AI OTel attributes emitted natively — but the `StrandsTelemetry` setup still requires 2 lines of operator code.
+- P1=0: no native checkpoint/resume. A crash at step 4 means full restart from step 1.
+- **Counterintuitive:** ties LangGraph at POI=9 via an entirely different profile — packaging and stability vs durability and containment.
 
 **Google ADK (POI 8, OT 221 LOC)**
-- P1=2: `InMemorySessionService` provides native checkpoint with a parseable JSON format and working resume. The session backend is swappable (Cloud Firestore, Vertex AI) — but only to GCP services, not portable to non-GCP infrastructure.
-- P4=2: the highest OT of any framework. Three mandatory environment variables (`ADK_RUNNER`, `GOOGLE_CLOUD_PROJECT`, `LITELLM_BASE_URL`) are not standard K8s primitives — they require framework-specific Helm template annotations and Kyverno policy exceptions.
-- **The cloud coupling cost:** ADK is designed for Cloud Run. Deploying to generic Kubernetes requires a LiteLLM routing layer and environment variables that reveal the framework's GCP assumptions, adding scaffolding other frameworks don't need.
+- P1=2: `InMemorySessionService` provides native checkpoint with a parseable JSON format and working resume — but only to GCP services, not portable to non-GCP infrastructure.
+- P4=2: highest OT of any framework. Three mandatory environment variables are not standard K8s primitives and require framework-specific Helm annotations.
+- **The cloud coupling cost:** designed for Cloud Run; Kubernetes deployment requires a LiteLLM routing layer and GCP-specific environment variables.
 
 **OpenAI SDK (POI 7, OT 124 LOC)**
-- P5=3: the most stable changelog of the five frameworks — 0.5 breaking changes per release on average, no checkpoint schema migrations. The lowest upgrade friction by a wide margin.
-- P1=0: checkpoint state is managed by OpenAI's backend, not by your infrastructure. Resume works — but only if you trust OpenAI's persistence layer and accept vendor lock-in. The state is not inspectable, not portable, not under your control.
-- **The OT paradox:** lowest OT (124 LOC) with POI=7. The low OT comes from not needing checkpoint scaffolding — because the framework delegates checkpoint to a vendor backend. This is an operability trade-off, not a win: you trade LOC for control.
+- P5=3: most stable changelog — 0.5 breaking changes per release on average, no checkpoint schema migrations.
+- P1=0: checkpoint state is managed by OpenAI's backend. Resume works — but only if you trust OpenAI's persistence layer. The state is not inspectable, not portable, not under your control.
+- **The OT paradox:** lowest OT (124 LOC) because it delegates checkpoint to a vendor backend — an operability trade-off, not a win.
 
 **AutoGen/MS (POI 5, OT 135 LOC)**
-- P1=0: no native checkpoint/resume. The GroupChat conversation state is in-memory only.
-- P5=1: highest breaking-change frequency of the five frameworks — 3.1 breaking changes per release on average. The v0.2 → v0.4 transition renamed core APIs and changed agent configuration schemas.
-- **The honest finding:** AutoGen's strength is multi-agent coordination patterns (`RoundRobinGroupChat`, `SelectorGroupChat`). Its weakness is everything that happens after those patterns are deployed. For teams that need durable, observable, stable agent infrastructure, it requires the most scaffolding for the least native support.
+- P1=0: `GroupChat` conversation state is in-memory only.
+- P5=1: highest breaking-change frequency — 3.1 breaking changes per release on average.
+- **The honest finding:** AutoGen's strength is multi-agent coordination patterns. Its weakness is everything that happens after those patterns are deployed.
 
 ---
 
 ## Ranking and Stability
 
 ### Equal-Weight Ranking
-
-Ranking primary: POI score descending. Tiebreak: OT-LOC ascending (less scaffolding burden wins).
 
 1. **LangGraph** — POI 9, OT 179 LOC
 2. **Strands** — POI 9, OT 195 LOC
@@ -207,47 +428,26 @@ Ranking primary: POI score descending. Tiebreak: OT-LOC ascending (less scaffold
 
 ### Sensitivity Analysis
 
-Equal pillar weights are an assumption. POI re-ran the ranking under 1,000 weight vectors drawn from a Dirichlet(α=1) distribution — uniform sampling over all possible ways to weight five pillars.
+POI re-ran the ranking under 1,000 weight vectors drawn from a Dirichlet(α=1) distribution — uniform sampling over all possible ways to weight five pillars.
 
 | Pairwise comparison | Holds under | Interpretation |
-|---|---|---|
-| LangGraph > Strands | 48% of draws | **Fragile.** Effectively a coin flip — the POI=9 tie reflects genuine closeness, not a clear winner. |
-| Strands > Google ADK | 71% of draws | Contested. Strands' packaging and API stability advantage is partly offset by ADK's checkpoint lead. |
-| Google ADK > OpenAI SDK | 67% of draws | Contested. Sensitive to how heavily P1 (durability) vs P5 (stability) is weighted. |
-| OpenAI SDK > AutoGen | 100% of draws | **Stable.** AutoGen trails all others regardless of how the pillars are weighted. |
+|---------------------|-------------|----------------|
+| LangGraph > Strands | 48% of draws | **Fragile.** Effectively a coin flip — the POI=9 tie reflects genuine closeness. |
+| Strands > Google ADK | 71% of draws | Contested. Strands' packaging and stability advantage is partly offset by ADK's checkpoint lead. |
+| Google ADK > OpenAI SDK | 67% of draws | Contested. Sensitive to how heavily P1 vs P5 is weighted. |
+| OpenAI SDK > AutoGen | 100% of draws | **Stable.** AutoGen trails all others regardless of pillar weighting. |
 
-**Full ranking unchanged in 15% of draws.**
-
-The honest conclusion: the only result you can state with confidence is that AutoGen trails the field. The LangGraph #1 position is a tiebreak artifact that reverses under many reasonable weight assumptions. Treat rankings #1–#4 as directional signals, not definitive orderings.
+**Full ranking unchanged in 15% of draws.** The only result you can state with confidence is that AutoGen trails the field. Treat rankings #1–#4 as directional signals, not definitive orderings.
 
 ---
 
 ## What This Benchmark Does Not Tell You
 
-**It does not measure capability.** POI says nothing about reasoning quality, task success rate, or tool-use accuracy. A framework with POI=9 can still produce wrong answers. Pair POI with a capability benchmark (e.g., GAIA, SWE-bench) for a complete picture.
+**It does not measure capability.** POI says nothing about reasoning quality, task success rate, or tool-use accuracy. Pair POI with a capability benchmark (GAIA, SWE-bench) for a complete picture.
 
-**It does not measure cost.** LLM API costs, token efficiency, and inference latency are not pillar inputs. A framework that batches tool calls efficiently may be cheaper to run than one that serialises them, independent of POI score.
+**It does not measure cost.** LLM API costs, token efficiency, and inference latency are not pillar inputs.
 
-**P3 and P5 are partially desk research.** P3 observability scores are based on documented OTel integration status and attribute completeness checks; they are not based on live trace capture. P5 migration fragility is based on changelog analysis, not on running actual upgrade scripts. Both are reproducible (the changelogs are public) but are subject to interpretation.
-
-**DRY_RUN mode.** All 20 benchmark combinations (5 frameworks × 2 scenarios × 2 implementation types) were run with `DRY_RUN=true` — workflows return canned fixtures without LLM calls or external service calls. P1 timing measurements (resume latency, duplicate call counts) require live runs with real infrastructure to be precise.
-
-**n=1 implementation.** Each framework is implemented once per scenario and implementation type. Scores reflect one team's interpretation of each framework's idiomatic patterns. A different implementer might make different choices that produce different OT-LOC counts.
-
----
-
-## Reproducibility
-
-The full benchmark is open at [github.com/ketan1602/platform-operability-index](https://github.com/ketan1602/platform-operability-index) (private during review period).
-
-To reproduce the score matrix and sensitivity analysis:
-
-```bash
-git clone <repo>
-pip install pydantic pyyaml structlog requests
-DRY_RUN=true python3 -m harness.run_all
-python3 analysis/poi_report.py
-```
+**n=1 implementation.** Each framework is implemented once per scenario. Scores reflect one team's interpretation of each framework's idiomatic patterns.
 
 ---
 

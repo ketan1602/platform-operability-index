@@ -16,4 +16,6 @@ if [[ -z "${AIREFINERY_API_KEY:-}" || -z "${AIREFINERY_BASE_URL:-}" || -z "${AIR
 fi
 [[ -f ".env.infra" ]] || echo "warning: no .env.infra — run ./infra.sh up before measured scenarios." >&2
 
-exec python3 -m uvicorn api.main:app --host 127.0.0.1 --port "$PORT"
+PYTHON="${SCRIPT_DIR}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+exec "$PYTHON" -m uvicorn api.main:app --host 127.0.0.1 --port "$PORT"

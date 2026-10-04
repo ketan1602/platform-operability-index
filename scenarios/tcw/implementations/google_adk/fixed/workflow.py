@@ -22,13 +22,10 @@ _STEP_NAMES = ["graph_query", "propensity_score", "eligibility_check",
                "offer_personalize", "channel_dispatch"]
 
 
-def _model_id() -> str:
-    return os.environ.get("AIREFINERY_MODEL_ID", "gpt-4o-mini")
-
-
 def _make_sub_agents():
     from google.adk.agents import LlmAgent
     from google.adk.tools import FunctionTool
+    from harness.frameworks.adk_llm import llm
 
     def graph_query(customer_id: str) -> str:
         data = query_customer_graph(customer_id)
@@ -49,7 +46,7 @@ def _make_sub_agents():
         receipt = dispatch_channel(customer_id, offer, workflow_id)
         return f"sent via {receipt.get('channel','email')}"
 
-    mid = f"litellm/{_model_id()}"
+    mid = llm()
     return [
         LlmAgent(name="GraphAgent",       model=mid, tools=[FunctionTool(graph_query)],       instruction="Call graph_query."),
         LlmAgent(name="PropensityAgent",  model=mid, tools=[FunctionTool(propensity_score)],  instruction="Call propensity_score."),

@@ -1,28 +1,24 @@
-"""P5 (Day-2 Migration Fragility) measurements for Strands Agents F5.
-
-Sources: strands-agents PyPI changelog (released 2025, v0.1.x).
-Amazon SDK is new with a small, stable API surface.  No checkpoint schema.
-Observed: ~0.5 breaking changes per minor release; prompt interface stable.
-Fleet estimate: 10 agents × 0.5 h update + 3 h regression = 8 h/cycle.
-"""
+"""P5 empirical probe for Strands Agents (F5)."""
 from __future__ import annotations
+import sys
 import structlog
 from harness.shared.pillar_models import P5Measurements
+from harness.scenarios.p5_probe import probe
 
 log = structlog.get_logger(__name__)
 
+_PACKAGE = "strands-agents"
+_FW_ID = "F5"
+_PROBE_SCENARIOS = [("TCW", "idiomatic"), ("SMA", "idiomatic")]
+
 
 def measure_p5() -> P5Measurements:
-    m = P5Measurements(
-        api_breaking_changes_in_patch=0,
-        schema_breaking_changes_in_patch=0,
-        checkpoint_migration_required=False,
-        prompt_rewrites_required=0,
-        changelog_breaking_changes_per_release_avg=0.4,
+    result = probe(
+        package=_PACKAGE,
+        fw_id=_FW_ID,
+        python_exe=sys.executable,
+        probe_scenarios=_PROBE_SCENARIOS,
+        test_checkpoint=False,
     )
-    log.info(
-        "p5.measured",
-        framework="F5",
-        avg_breaking=m.changelog_breaking_changes_per_release_avg,
-    )
-    return m
+    log.info("p5.probed", fw=_FW_ID, **{k: v for k, v in result.items() if k != "version_before"})
+    return P5Measurements(**result)

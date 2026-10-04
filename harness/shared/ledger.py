@@ -30,3 +30,10 @@ def read(path: Path) -> list[dict]:
 
 def count(entries: list[dict], event: str) -> int:
     return sum(1 for e in entries if e["event"] == event)
+
+
+def sum_tokens(entries: list[dict]) -> dict:
+    """Sum all llm_usage events into {input_tokens, output_tokens, total_tokens}."""
+    inp = sum(e.get("input_tokens", 0) for e in entries if e.get("event") == "llm_usage")
+    out = sum(e.get("output_tokens", 0) for e in entries if e.get("event") == "llm_usage")
+    return {"input_tokens": inp, "output_tokens": out, "total_tokens": inp + out}

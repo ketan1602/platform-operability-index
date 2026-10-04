@@ -23,12 +23,14 @@ from pathlib import Path
 import structlog
 
 from harness.scenarios.common import env_int, impl_target, workdir
-from harness.shared import child
+from harness.scenarios.dx_extras import _STATIC_P7, run_escape_hatch, run_local
+from harness.shared import child, ledger
 from harness.shared.pillar_models import P7Measurements
 
 log = structlog.get_logger(__name__)
 
 _REPO = Path(__file__).resolve().parents[2]
+
 
 _FIX_PATTERNS = (
     re.compile(r"should return", re.I),
@@ -93,15 +95,74 @@ def _run_mistake(fw: str, mistake: str) -> int:
     return score
 
 
+def _elapsed_to_ttr_score(s: float) -> int:
+    if s < 5:
+        return 3
+    if s < 15:
+        return 2
+    if s < 30:
+        return 1
+    return 0
+
+
+def _run_smoke(fw: str) -> tuple[bool, float]:
+    """Functional verification: spawn working agent, check tool called, record elapsed."""
+    import time
+    path = workdir("DX") / "ledger_smoke.jsonl"
+    t0 = time.monotonic()
+    proc = child.spawn(impl_target("DX", fw), {"mistake": "SMOKE"}, path)
+    out = child.watch(proc, path, timeout_s=env_int("POI_DX_TIMEOUT_S", 120))
+    elapsed = time.monotonic() - t0
+    entries = ledger.read(path)
+    verified = (
+        out.stop == "exited"
+        and (out.result or {}).get("stop") == "final_answer"
+        and ledger.count(entries, "dx_smoke") >= 1
+    )
+    return verified, elapsed
+
+
+def _run_middleware(fw: str) -> bool:
+    """Spawn MIDDLEWARE sub-test child; return True if middleware_fired appears in ledger."""
+    path = workdir("DX") / "ledger_middleware.jsonl"
+    proc = child.spawn(impl_target("DX", fw), {"mistake": "MIDDLEWARE"}, path)
+    child.watch(proc, path, timeout_s=env_int("POI_DX_TIMEOUT_S", 120))
+    entries = ledger.read(path)
+    fired = ledger.count(entries, "middleware_fired") >= 1
+    log.info("dx.middleware", fw=fw, fired=fired)
+    return fired
+
+
 def measure(fw: str, ttr_score: int | None = None) -> dict:
-    scores = {m: _run_mistake(fw, m) for m in ("A", "B", "C")}
+    verified, elapsed_s = _run_smoke(fw)
+    ttr = _elapsed_to_ttr_score(elapsed_s) if verified else 0
+    scores = {m: _run_mistake(fw, m) for m in ("A", "B", "C", "D", "E")}
+    middleware_ok = _run_middleware(fw)
+    local_score = run_local(fw)
+    escape_score = run_escape_hatch(fw)
+    static = _STATIC_P7.get(fw, {})
     m = P7Measurements(
-        ttr_score=ttr_score,
+        time_to_first_run_s=round(elapsed_s, 2),
+        ttr_score=ttr,
+        functional_verified=verified,
         error_clarity_a=scores["A"],
         error_clarity_b=scores["B"],
         error_clarity_c=scores["C"],
+        error_clarity_d=scores["D"],
+        error_clarity_e=scores["E"],
+        middleware_injectable=middleware_ok,
+        local_testability_score=local_score,
+        escape_hatch_score=escape_score,
+        community_score=static.get("community_score"),
+        vendor_independence_score=static.get("vendor_independence_score"),
     )
-    avg_clarity = sum(scores.values()) / 3
-    notes = (f"error_clarity A={scores['A']} B={scores['B']} C={scores['C']} "
-             f"avg={avg_clarity:.1f} ttr_score={ttr_score}")
+    avg_clarity = sum(scores.values()) / len(scores)
+    notes = (
+        f"smoke={'ok' if verified else 'FAIL'} ttr={ttr} ({elapsed_s:.1f}s); "
+        f"error_clarity A={scores['A']} B={scores['B']} C={scores['C']} "
+        f"D={scores['D']} E={scores['E']} avg={avg_clarity:.1f}; "
+        f"middleware={middleware_ok} local={local_score} escape={escape_score}; "
+        f"community={static.get('community_score')} "
+        f"vendor_ind={static.get('vendor_independence_score')}"
+    )
     return {"notes": notes, "p7": m}

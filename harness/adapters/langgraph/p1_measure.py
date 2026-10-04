@@ -11,6 +11,7 @@ from pathlib import Path
 
 import structlog
 
+from harness.shared import custom_loc, result_cache
 from harness.shared.pillar_models import P1Measurements
 
 log = structlog.get_logger(__name__)
@@ -22,11 +23,8 @@ _CHECKPOINT_PY = (
 
 
 def _count_checkpoint_loc() -> int:
-    return sum(
-        1
-        for ln in _CHECKPOINT_PY.read_text().splitlines()
-        if ln.strip() and not ln.strip().startswith("#")
-    )
+    """Count only harness-custom lines (between poi:custom markers), not framework API calls."""
+    return custom_loc.count(_CHECKPOINT_PY)
 
 
 def _import_workflow(impl_type: str):
@@ -62,41 +60,59 @@ def _t2_resume(impl_type: str) -> tuple[int, int]:
 
 
 def _t3_idempotency(impl_type: str) -> int:
-    wf = _import_workflow(impl_type)
-    from scenarios.gew.shared.mock_client import reset_crm_receipts, update_crm
+    """Return actual duplicate CRM tool calls: observed_calls - 1 (expected = exactly 1)."""
+    import os
+    import tempfile
+    from harness.shared import ledger as _ledger
+    from scenarios.gew.shared.mock_client import reset_crm_receipts
 
+    wf = _import_workflow(impl_type)
     reset_crm_receipts()
-    wid = str(uuid.uuid4())
-    wf.run_workflow(workflow_id=wid)
-    dup = update_crm(
-        idempotency_key=f"{wid}-crm-step4",
-        customer_id=wid,
-        action="update",
-        data={},
-    )
-    return 0 if dup.get("already_processed") else 1
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
+        tmp = Path(f.name)
+    prev = os.environ.get("POI_LEDGER")
+    os.environ["POI_LEDGER"] = str(tmp)
+    try:
+        wf.run_workflow(workflow_id=str(uuid.uuid4()))
+    finally:
+        if prev is None:
+            os.environ.pop("POI_LEDGER", None)
+        else:
+            os.environ["POI_LEDGER"] = prev
+    calls = _ledger.count(_ledger.read(tmp), "gew_crm_updated")
+    tmp.unlink(missing_ok=True)
+    return max(0, calls - 1)
 
 
 def _t4_checkpoint_format(impl_type: str) -> str:
-    from langgraph.checkpoint.memory import MemorySaver
-    wf = _import_workflow(impl_type)
+    """Probe checkpoint format empirically: run the graph, read back state, try json.dumps.
 
+    MemorySaver state is a Python dict and json-serializable (human_readable).
+    When CHECKPOINT_BACKEND_URL is set the production backend is Postgres, which
+    stores binary blobs — honest label is "parseable" (structured but not plain text).
+    """
+    import json
+    import os
+    from langgraph.checkpoint.memory import MemorySaver
+
+    wf = _import_workflow(impl_type)
     cp = MemorySaver()
     g = wf.build_graph(checkpointer=cp)
     tid = str(uuid.uuid4())
-    g.invoke({"workflow_id": tid, "step_log": []}, {"configurable": {"thread_id": tid}})
+    cfg = {"configurable": {"thread_id": tid}}
+    g.invoke({"workflow_id": tid, "step_log": []}, cfg)
     try:
-        from langgraph.checkpoint.postgres import PostgresSaver
-        if isinstance(cp, PostgresSaver):
-            return "human_readable"
-    except ImportError:
-        pass
-    return "parseable"
+        state_values = g.get_state(cfg).values or {}
+        json.dumps(state_values)
+        return "parseable" if os.environ.get("CHECKPOINT_BACKEND_URL") else "human_readable"
+    except (TypeError, ValueError):
+        return "opaque"
 
 
 def measure_p1(impl_type: str = "fixed") -> P1Measurements:
     import os
     ck_loc = _count_checkpoint_loc()
+    collision = result_cache.load("F1", "concurrent_resume_collision", "prevented_by_config")
     if os.environ.get("DRY_RUN") == "true":
         log.info("p1.dry_run", impl_type=impl_type)
         return P1Measurements(
@@ -104,7 +120,7 @@ def measure_p1(impl_type: str = "fixed") -> P1Measurements:
             steps_re_executed_on_resume=0,
             duplicate_tool_calls_on_mid_write=0,
             checkpoint_format="parseable",
-            concurrent_resume_collision="prevented_by_config",
+            concurrent_resume_collision=collision,
             manual_watchdog_required=False,
             custom_code_lines_to_reach_score_3=ck_loc,
         )
@@ -120,13 +136,14 @@ def measure_p1(impl_type: str = "fixed") -> P1Measurements:
         dup_calls=dup_calls,
         checkpoint_format=ck_fmt,
         checkpoint_loc=ck_loc,
+        collision=collision,
     )
     return P1Measurements(
         resume_latency_ms=resume_ms,
         steps_re_executed_on_resume=steps_re,
         duplicate_tool_calls_on_mid_write=dup_calls,
         checkpoint_format=ck_fmt,
-        concurrent_resume_collision="prevented_by_config",
+        concurrent_resume_collision=collision,
         manual_watchdog_required=False,
         custom_code_lines_to_reach_score_3=ck_loc,
     )

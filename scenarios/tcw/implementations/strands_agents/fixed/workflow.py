@@ -24,7 +24,7 @@ _STEP_NAMES = ["graph_query", "propensity_score", "eligibility_check",
 def _model():
     from strands.models.openai import OpenAIModel
     return OpenAIModel(
-        model_id=os.environ.get("AIREFINERY_MODEL_ID", "gpt-4o-mini"),
+        model_id=os.environ.get("AIREFINERY_MODEL", "openai/gpt-oss-120b"),
         client_args={
             "base_url": os.environ["AIREFINERY_BASE_URL"],
             "api_key": os.environ.get("AIREFINERY_API_KEY", "x"),

@@ -33,6 +33,9 @@ h3 { font-size: 14px; margin: 20px 0 8px; }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; }
+.results-toolbar { display: flex; align-items: center; gap: 1rem; }
+.run-filter-label { color: var(--muted); font-size: .85rem; display: flex; align-items: center; gap: .4rem; }
+.run-filter-label select { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: .85rem; cursor: pointer; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
 

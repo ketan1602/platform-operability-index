@@ -1,9 +1,13 @@
-"""Read a run's spans back from Jaeger and measure trace quality for P3."""
+"""Read a run's spans back from Jaeger and measure trace quality for P3/P8."""
 from __future__ import annotations
 import os
+import re
 import time
 
 import requests
+
+_LLM_URL_RE = re.compile(r"/chat/completions|/v1/messages|/generate", re.I)
+_GENAI_ATTRS = frozenset({"gen_ai.system", "gen_ai.provider.name", "gen_ai.operation.name"})
 
 REQUIRED = ("gen_ai.operation.name", "gen_ai.provider.name",
             "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens")
@@ -12,10 +16,14 @@ ALIASES = {"gen_ai.provider.name": ("gen_ai.provider.name", "gen_ai.system")}
 
 
 def fetch_spans(service: str, settle_s: float = 4.0, timeout_s: float = 30.0) -> list[dict]:
-    """Poll until the span count stops changing (batch export is asynchronous)."""
+    """Poll until the span count stops changing (batch export is asynchronous).
+
+    Returns [] when JAEGER_QUERY_URL is not set so callers can fall back to
+    in-process spans captured by the InMemorySpanExporter in sma_trial.
+    """
     base = os.environ.get("JAEGER_QUERY_URL", "")
     if not base:
-        raise RuntimeError("JAEGER_QUERY_URL must be set (run ./infra.sh up)")
+        return []
     deadline, last, stable_since = time.monotonic() + timeout_s, -1, time.monotonic()
     spans: list[dict] = []
     while time.monotonic() < deadline:
@@ -44,6 +52,70 @@ def _int_tag(tags: dict, key: str) -> int:
         return int(val) if val is not None else 0
     except (TypeError, ValueError):
         return 0
+
+
+def analyse_dicts(spans: list[dict], agent_names: list[str]) -> dict:
+    """Analyse spans serialised by sma_trial._serialise_spans (InMemorySpanExporter format).
+
+    Each span is {"name", "trace_id", "span_id", "parent_span_id", "attributes"}.
+    Produces the same dict shape as analyse() so callers are interchangeable.
+    """
+    span_ids = {s["span_id"] for s in spans}
+    orphans = sum(
+        1 for s in spans
+        if s.get("parent_span_id") and s["parent_span_id"] not in span_ids
+    )
+    all_attrs = [s.get("attributes", {}) for s in spans]
+    attr_keys = {k for d in all_attrs for k in d}
+    text = " ".join(
+        s["name"] + " " + " ".join(str(v) for v in s.get("attributes", {}).values())
+        for s in spans
+    ).lower()
+    present = _present(attr_keys)
+    total_input = sum(int(d.get("gen_ai.usage.input_tokens") or 0) for d in all_attrs)
+    total_output = sum(int(d.get("gen_ai.usage.output_tokens") or 0) for d in all_attrs)
+    trace_ids = {s["trace_id"] for s in spans if s.get("trace_id")}
+    return {
+        "framework_spans": len(spans),
+        "trace_ids_per_run": len(trace_ids),
+        "orphan_spans": orphans,
+        "required_attributes_emitted_by_default": present,
+        "missing_required_attributes": [r for r in REQUIRED if r not in present],
+        "agents_invoked": len(agent_names),
+        "agents_traced": sum(1 for a in agent_names if a.lower() in text),
+        "total_input_tokens": total_input,
+        "total_output_tokens": total_output,
+    }
+
+
+def spans_clean(spans: list[dict]) -> bool:
+    """True if no raw HTTP LLM-call spans appear without gen-ai semantic attributes.
+
+    A span is flagged when its URL matches an LLM inference path AND it carries
+    none of the standard gen_ai.* attributes — indicating the framework leaked a
+    bare HTTP client span without wrapping it in gen-ai semconv.
+    """
+    for span in spans:
+        tags = _tags(span)
+        url = str(tags.get("http.url", "") or tags.get("url.full", ""))
+        if _LLM_URL_RE.search(url) and not any(k in tags for k in _GENAI_ATTRS):
+            return False
+    return True
+
+
+def has_error_signal(spans: list[dict]) -> bool:
+    """Return True if any in-process span carries error or exception.* attributes.
+
+    Used by sma.py to set alert_fired_without_custom_code: True means the
+    framework emits structured error signals the OSS stack can alert on natively.
+    """
+    for s in spans:
+        attrs = s.get("attributes", {}) or {}
+        if attrs.get("error") is True or str(attrs.get("error", "")).lower() == "true":
+            return True
+        if any(k.startswith("exception.") for k in attrs):
+            return True
+    return False
 
 
 def analyse(spans: list[dict], agent_names: list[str]) -> dict:

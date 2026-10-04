@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 
 from harness.scenarios.common import TrialError, env_int, impl_module, impl_path, workdir
-from harness.shared import approval_queue, child, custom_loc, ledger
+from harness.shared import approval_queue, child, custom_loc, ledger, result_cache
 from harness.shared.pillar_models import P1Measurements
 from scenarios.ahq.shared import state_store
 from scenarios.ahq.shared.tools import EXPECTED_ACTION, digest
@@ -66,14 +66,18 @@ def measure(fw: str) -> dict:
     notes = "; ".join(f"resumer {i + 1}: {o.stop}/{(o.result or {}).get('stop')}"
                       + (f" {o.result.get('signal')}" if (o.result or {}).get("signal") else "")
                       for i, o in enumerate(resumes))
-    return {"notes": notes, "p1": P1Measurements(
+    collision = "prevented_by_framework" if len(applies) <= 1 else "not_prevented"
+    m = P1Measurements(
         resume_succeeded=bool(ok) and bool(applies),
         state_intact_after_kill=bool(applies) and pending_ok and all(a["digest"] == want for a in applies),
         steps_re_executed_on_resume=max((sum(1 for e in entries if e["event"] == "lookup_account"
                                             and e["pid"] == p) for p in resumer_pids), default=0),
         side_effect_executions=len(applies),
-        concurrent_resume_collision="prevented_by_framework" if len(applies) <= 1 else "not_prevented",
+        concurrent_resume_collision=collision,
         resume_latency_ms=min((o.elapsed_ms for o in ok), default=None),
         custom_code_lines_to_reach_score_3=_custom_loc(fw),
         checkpoint_backend=paused.get("backend"),
-    )}
+    )
+    result_cache.store(fw, "resume_succeeded", m.resume_succeeded)
+    result_cache.store(fw, "concurrent_resume_collision", collision)
+    return {"notes": notes, "p1": m}

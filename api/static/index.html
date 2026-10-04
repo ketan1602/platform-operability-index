@@ -79,9 +79,17 @@
     <section class="card" id="results-card">
       <div class="card-head">
         <h2>Results</h2>
-        <div class="segmented" role="radiogroup" aria-label="Results source">
-          <label><input type="radio" name="results-mode" value="live" checked> Live</label>
-          <label><input type="radio" name="results-mode" value="dry_run"> Dry run</label>
+        <div class="results-toolbar">
+          <div class="segmented" role="radiogroup" aria-label="Results source">
+            <label><input type="radio" name="results-mode" value="live" checked> Live</label>
+            <label><input type="radio" name="results-mode" value="dry_run"> Dry run</label>
+          </div>
+          <label class="run-filter-label">
+            Run:
+            <select id="run-select">
+              <option value="">All runs (aggregated)</option>
+            </select>
+          </label>
         </div>
       </div>
       <p id="results-meta" class="muted"></p>

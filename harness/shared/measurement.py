@@ -33,6 +33,7 @@ class ScenarioId(str, Enum):
     PORT = "PORT" # portability sub-tests              -> P6 evidence
     DX = "DX"     # developer experience               -> P7 evidence
     SEC = "SEC"   # security posture                   -> P8 evidence
+    OPS = "OPS"   # ops experience: FinOps + runtime + fleet -> P9 evidence
 
 
 class ImplementationType(str, Enum):
@@ -49,6 +50,7 @@ class Pillar(str, Enum):
     P6 = "p6"
     P7 = "p7"
     P8 = "p8"
+    P9 = "p9"
     ALL = "all"
 
 
@@ -69,18 +71,22 @@ class RunMetadata(BaseModel):
 
 
 class PillarScores(BaseModel):
-    p1: Optional[int] = None  # 0-3 or null if not run
-    p2: Optional[int] = None
-    p3: Optional[int] = None
+    p1: Optional[float] = None  # 0-3; float because p2/p3 use continuous sub-scores
+    p2: Optional[float] = None  # p2_from_isolation returns 1.5 for partial sibling completion
+    p3: Optional[float] = None  # p3_from_traces returns continuous 0.0-3.0
     p4: Optional[int] = None
     p5: Optional[int] = None
     p6: Optional[int] = None
     p7: Optional[int] = None
     p8: Optional[int] = None
+    p9: Optional[int] = None
 
     @property
-    def poi_total(self) -> int:
-        return sum(s for s in [self.p1, self.p2, self.p3, self.p4, self.p5, self.p6, self.p7, self.p8] if s is not None)
+    def poi_total(self) -> float:
+        return sum(
+            s for s in [self.p1, self.p2, self.p3, self.p4, self.p5, self.p6, self.p7, self.p8, self.p9]
+            if s is not None
+        )
 
 
 class OperabilityTax(BaseModel):
@@ -94,6 +100,7 @@ class RunResult(BaseModel):
     pillar_scores: PillarScores = Field(default_factory=PillarScores)
     operability_tax: OperabilityTax = Field(default_factory=OperabilityTax)
     raw_measurements: dict[str, Any] = Field(default_factory=dict)
+    finops: dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None
     notes: str = ""
 

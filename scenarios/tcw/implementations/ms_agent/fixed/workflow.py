@@ -23,12 +23,8 @@ _STEP_NAMES = ["graph_query", "propensity_score", "eligibility_check",
 
 
 def _make_model():
-    from autogen_ext.models.openai import OpenAIChatCompletionClient
-    return OpenAIChatCompletionClient(
-        model=os.environ.get("AIREFINERY_MODEL_ID", "gpt-4o-mini"),
-        base_url=os.environ["AIREFINERY_BASE_URL"],
-        api_key=os.environ.get("AIREFINERY_API_KEY", "x"),
-    )
+    from harness.frameworks.autogen_llm import chat_client
+    return chat_client()
 
 
 def _make_agents():

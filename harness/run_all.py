@@ -20,6 +20,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import structlog
+from dotenv import load_dotenv
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(_REPO_ROOT / ".env", override=False)
+load_dotenv(_REPO_ROOT / ".env.infra", override=False)
 
 from harness.adapters.base import SubprocessRunner
 
@@ -29,7 +34,7 @@ _ROOT = Path(__file__).parent.parent
 _ADAPTER_DIRS = {"F1": "langgraph", "F2": "ms_agent", "F3": "openai_sdk", "F4": "google_adk", "F5": "strands"}
 _FW_NAMES = {"F1": "LangGraph", "F2": "AutoGen", "F3": "OpenAI SDK", "F4": "Google ADK", "F5": "Strands"}
 _BASELINE = ("GEW", "TCW")
-_MEASURED = ("RLC", "SMA", "AHQ", "GEW", "TCW", "PORT", "DX", "SEC")
+_MEASURED = ("RLC", "SMA", "AHQ", "GEW", "TCW", "PORT", "DX", "SEC", "OPS")
 _IMPLS = ("fixed", "idiomatic")
 
 
@@ -78,7 +83,7 @@ def _run_one(fw: str, sc: str, impl: str, rep: int, out: Path) -> tuple[bool, st
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run POI combinations")
-    p.add_argument("--results-dir", type=Path, default=_ROOT / "results" / "runs")
+    p.add_argument("--results-dir", type=Path, default=_ROOT / "results" / "runs" / "live")
     p.add_argument("--frameworks", nargs="+", choices=list(_ADAPTER_DIRS), default=list(_ADAPTER_DIRS))
     _all_sc = list(dict.fromkeys(_BASELINE + _MEASURED))  # deduplicated, order-preserving
     p.add_argument("--scenarios", nargs="+", choices=_all_sc, default=_all_sc)

@@ -23,6 +23,8 @@ _STEP_NAMES = ["graph_query", "propensity_score", "eligibility_check",
 
 def _make_agent():
     from agents import Agent, function_tool
+    from harness.frameworks.openai_agents_llm import model as _model
+    m = _model()
 
     @function_tool
     def fetch_graph(customer_id: str) -> str:
@@ -50,6 +52,7 @@ def _make_agent():
 
     return Agent(
         name="TCWOrchestrator",
+        model=m,
         instructions=(
             "Execute TCW in order: "
             "1) fetch_graph 2) run_propensity 3) run_eligibility "
@@ -71,7 +74,7 @@ async def _run_sdk(workflow_id: str, customer_id: str) -> dict:
         agent,
         input=f"Execute TCW for customer={customer_id}, workflow_id={workflow_id}",
     )
-    step_log = [s for s in _STEP_NAMES if any(s in str(m) for m in result.new_messages)]
+    step_log = [s for s in _STEP_NAMES if any(s in str(item) for item in result.new_items)]
     return {"workflow_id": workflow_id, "step_log": step_log or list(_STEP_NAMES)}
 
 

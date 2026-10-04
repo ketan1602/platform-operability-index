@@ -69,7 +69,7 @@ def run_workflow(workflow_id: str = None, customer_id: str = "cust-001") -> dict
     from strands import Agent
     from strands.models.openai import OpenAIModel
     model = OpenAIModel(
-        model_id=os.environ.get("AIREFINERY_MODEL_ID", "gpt-4o-mini"),
+        model_id=os.environ.get("AIREFINERY_MODEL", "openai/gpt-oss-120b"),
         client_args={
             "base_url": os.environ["AIREFINERY_BASE_URL"],
             "api_key": os.environ.get("AIREFINERY_API_KEY", "x"),

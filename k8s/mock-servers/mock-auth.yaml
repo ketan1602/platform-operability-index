@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-auth
+  namespace: poi
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mock-auth}
+  template:
+    metadata:
+      labels: {app: mock-auth}
+    spec:
+      imagePullSecrets:
+      - name: harbor-pull-secret
+      containers:
+      - name: server
+        image: harbor.internal/platform/poi-mock-servers:latest
+        imagePullPolicy: Always
+        env:
+        - {name: SERVER_MODULE, value: mock_auth_server}
+        - {name: HTTP_PORT, value: "8005"}
+        - {name: MCP_PORT,  value: "9005"}
+        ports:
+        - {containerPort: 8005, name: http}
+        - {containerPort: 9005, name: mcp}
+        livenessProbe:
+          httpGet: {path: /health, port: 8005}
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet: {path: /health, port: 8005}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits:   {cpu: 100m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-auth
+  namespace: poi
+spec:
+  selector: {app: mock-auth}
+  ports:
+  - {name: http, port: 8005, targetPort: 8005}
+  - {name: mcp,  port: 9005, targetPort: 9005}

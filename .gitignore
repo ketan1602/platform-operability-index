@@ -37,3 +37,6 @@ results/runs/**/*.yaml
 # Local infra state (port-forward pids, generated connection env)
 .infra/
 .env.infra
+
+# Old pilot run data (superseded by full live run)
+results/runs/live/old-results/

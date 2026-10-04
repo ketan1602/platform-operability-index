@@ -1,29 +1,24 @@
-"""P5 (Day-2 Migration Fragility) measurements for LangGraph F1.
-
-Sources: LangGraph PyPI changelog, GitHub releases (langgraph 0.1.x → 0.2.x).
-Key events:
-  - 0.1→0.2: checkpoint SerializerProtocol changed (migration required)
-  - interrupt_after arg: renamed between patches
-  - ~1.2 user-visible breaking changes per minor release
-Fleet upgrade estimate: 10 agents × 1.5 h each = 15 h + 3 h regression testing.
-"""
+"""P5 empirical probe for LangGraph (F1)."""
 from __future__ import annotations
+import sys
 import structlog
 from harness.shared.pillar_models import P5Measurements
+from harness.scenarios.p5_probe import probe
 
 log = structlog.get_logger(__name__)
 
+_PACKAGE = "langgraph"
+_FW_ID = "F1"
+_PROBE_SCENARIOS = [("TCW", "idiomatic"), ("SMA", "idiomatic")]
+
 
 def measure_p5() -> P5Measurements:
-    m = P5Measurements(
-        api_breaking_changes_in_patch=1,
-        schema_breaking_changes_in_patch=1,
-        checkpoint_migration_required=True,
-        prompt_rewrites_required=0,
-        changelog_breaking_changes_per_release_avg=1.2,
+    result = probe(
+        package=_PACKAGE,
+        fw_id=_FW_ID,
+        python_exe=sys.executable,
+        probe_scenarios=_PROBE_SCENARIOS,
+        test_checkpoint=True,
     )
-    log.info(
-        "p5.measured",
-        avg_breaking=m.changelog_breaking_changes_per_release_avg,
-    )
-    return m
+    log.info("p5.probed", fw=_FW_ID, **{k: v for k, v in result.items() if k != "version_before"})
+    return P5Measurements(**result)
