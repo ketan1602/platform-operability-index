@@ -131,25 +131,6 @@ function renderFinOps(r) {
   return el("div", { class: "bars" }, rows);
 }
 
-function renderPerf(r) {
-  const vals = Object.fromEntries(r.ranking.map((fid) => [fid, r.perf[fid]?.inter_tool_latency_ms ?? null]));
-  const avail = Object.values(vals).filter((v) => v !== null);
-  const max = Math.max(...avail, 1);
-  const order = [...r.ranking].sort((a, b) => (vals[a] ?? Infinity) - (vals[b] ?? Infinity));
-  const rows = order.map((fid) => {
-    const v = vals[fid];
-    const mem = r.perf[fid]?.peak_memory_rss_mb;
-    return el("div", { class: "bar-row" }, [
-      el("span", { class: "bar-label", text: r.names[fid] }),
-      el("div", { class: "bar-track" }, el("div", {
-        class: "bar-fill", style: `width:${v !== null ? (v / max) * 100 : 0}%`,
-        tip: `${r.names[fid]}: ${v ?? "–"} ms inter-tool · ${mem ?? "–"} MB peak RSS`,
-      })),
-      el("span", { class: "bar-value", text: v !== null ? `${v}ms` : "–" }),
-    ]);
-  });
-  return el("div", { class: "bars" }, rows);
-}
 
 async function loadRunList() {
   const mode = document.querySelector("input[name=results-mode]:checked").value;
@@ -171,7 +152,7 @@ async function loadResults() {
   const url = run ? `/api/v1/results?mode=${mode}&run=${run}` : `/api/v1/results?mode=${mode}`;
   const res = await fetch(url);
   const r = await res.json();
-  const ids = ["matrix", "ot", "ranking", "evidence", "finops", "perf", "sensitivity"];
+  const ids = ["matrix", "ot", "ranking", "evidence", "finops", "sensitivity"];
   ids.forEach((id) => { const el = document.getElementById(id); if (el) el.replaceChildren(); });
   const meta = document.getElementById("results-meta");
   if (!r.run_count) {
@@ -186,7 +167,6 @@ async function loadResults() {
   document.getElementById("ranking").append(...renderRanking(r));
   document.getElementById("evidence").append(renderEvidence(r));
   if (r.finops) document.getElementById("finops").append(renderFinOps(r));
-  if (r.perf) document.getElementById("perf").append(renderPerf(r));
   document.getElementById("sensitivity").append(renderSensitivity(r));
   document.getElementById("sens-meta").textContent = `(${r.sensitivity.samples} Dirichlet weight samples)`;
   bindTooltips(document.getElementById("results-card"));
